@@ -1,6 +1,6 @@
 CC      := gcc
 CFLAGS  := -std=c11 -Wall -Wextra -g -O0 \
-           -Icore -Iisa -Iassembler -Iui
+           -Icore -Iisa -Iassembler -Iui -Ipipeline
 LDFLAGS :=
 
 BIN := rvsim
@@ -14,6 +14,8 @@ SRCS := \
 	isa/rv32i_base.c \
 	assembler/assembler.c \
 	ui/cli_display.c \
+	pipeline/control.c \
+	pipeline/pipeline.c \
 	main.c
 
 OBJS := $(SRCS:.c=.o)
