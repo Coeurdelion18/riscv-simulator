@@ -8,6 +8,7 @@
 #include "rv32i_base.h"
 #include "assembler.h"
 #include "cli_display.h"
+#include "pipeline_state.h"
 
 #define DEFAULT_MEM_SIZE   (1u << 20)   /* 1 MB */
 #define DEFAULT_MAX_CYCLES 1000000ull
@@ -17,7 +18,8 @@ static void usage(const char *prog) {
         "usage: %s <program.s> [options]\n"
         "  --batch              run to completion with no interaction, then dump state\n"
         "  --max-cycles N       cycle limit for --batch mode (default %llu)\n"
-        "  --mem-size N         memory size in bytes (default %u)\n",
+        "  --mem-size N         memory size in bytes (default %u)\n"
+        " --pipeline            run using pipeline stages",
         prog, (unsigned long long)DEFAULT_MAX_CYCLES, DEFAULT_MEM_SIZE);
 }
 
@@ -35,6 +37,8 @@ int main(int argc, char **argv) {
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--batch") == 0) {
             batch_mode = 1;
+        } else if (strcmp(argv[i], "--pipeline") == 0) {
+            batch_mode = 2;
         } else if (strcmp(argv[i], "--max-cycles") == 0 && i + 1 < argc) {
             max_cycles = strtoull(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--mem-size") == 0 && i + 1 < argc) {
@@ -74,9 +78,13 @@ int main(int argc, char **argv) {
     /* 3. Reset the CPU at the program's entry point and run it. */
     CPUState cpu;
     cpu_reset(&cpu, entry_point);
+    Pipeline p;
 
-    if (batch_mode) {
+    if (batch_mode == 1) {
         run_batch(&cpu, &mem, max_cycles);
+    } else if (batch_mode == 2) {
+        pipeline_init(&p);
+        pipeline_run_batch(&p, &cpu, &mem, max_cycles);
     } else {
         run_repl(&cpu, &mem);
     }
