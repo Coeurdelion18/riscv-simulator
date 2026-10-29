@@ -31,8 +31,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             cpu->pc = temp_pc;
         }
         retired++;
-        
-        *p = nx; /* commit: one clock edge */
-        return cpu->status;
-    }
+    } 
+    *p = nx; /* commit: one clock edge */
+    return cpu->status;
 }
