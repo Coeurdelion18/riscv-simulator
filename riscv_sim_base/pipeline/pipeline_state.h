@@ -17,6 +17,7 @@ typedef struct {
     uint32_t pc;
     uint32_t raw;
     int fault;
+    uint64_t stall_cycles; /* Penalties belong to this instruction, not speculation. */
 } IFID;
 
 typedef struct {
@@ -27,6 +28,7 @@ typedef struct {
     const InstructionHandler* handler;
     ControlSignals ctrl;
     uint32_t rs1_val, rs2_val;
+    uint64_t stall_cycles;
 } IDEX;
 
 typedef struct {
@@ -39,6 +41,8 @@ typedef struct {
     uint32_t alu_result;
     uint32_t store_val;
     uint32_t fault_addr;
+    uint64_t stall_cycles;
+    int redirected;
 } EXMEM;
 
 typedef struct {
@@ -50,6 +54,8 @@ typedef struct {
     ControlSignals ctrl;
     uint32_t wb_val;
     uint32_t fault_addr;
+    uint64_t stall_cycles;
+    int redirected;
 } MEMWB;
 
 typedef struct {
