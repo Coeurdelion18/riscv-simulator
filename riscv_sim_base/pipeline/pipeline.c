@@ -16,7 +16,7 @@ static uint32_t alu(const DecodedInstr *i, uint32_t pc, uint32_t a, uint32_t b) 
             switch (i->funct3) {
                 case 0x0: return a + i->imm;                          /* ADDI */
                 case 0x2: return ((int32_t)a < (int32_t)i->imm) ? 1 : 0; /* SLTI */
-                case 0x3: return (a < i->imm) ? 1 : 0;                /* SLTIU */
+                case 0x3: return ((uint32_t)a < (uint32_t)i->imm) ? 1 : 0;                /* SLTIU */
                 case 0x4: return a ^ i->imm;                          /* XORI */
                 case 0x6: return a | i->imm;                          /* ORI */
                 case 0x7: return a & i->imm;                          /* ANDI */
@@ -128,15 +128,15 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                 int status = MEM_OK;
 
                 switch(p->ex_mem.instr.funct3){
-                    case 1: status = memory_read_byte(mem, p->ex_mem.alu_result, (int8_t*)&val); break; //LB
-                    case 2: status = memory_read_half(mem, p->ex_mem.alu_result, (int16_t*)&val); break; //LH
+                    case 1: status = memory_read_byte(mem, p->ex_mem.alu_result, (uint8_t*)&val); break; //LB
+                    case 2: status = memory_read_half(mem, p->ex_mem.alu_result, (uint16_t*)&val); break; //LH
                     case 3: status = memory_read_word(mem, p->ex_mem.alu_result, &val); break; //LW
                     case 4: 
-                        status = memory_read_byte(mem, p->ex_mem.alu_result, (int8_t*)&val); 
+                        status = memory_read_byte(mem, p->ex_mem.alu_result, (uint8_t*)&val); 
                         val &= 0xFF;
                         break; //LBU
                     case 5: 
-                        status = memory_read_half(mem, p->ex_mem.alu_result, (int16_t*)&val); 
+                        status = memory_read_half(mem, p->ex_mem.alu_result, (uint16_t*)&val); 
                         val &= 0xFFFF;
                         break; 
                 }
