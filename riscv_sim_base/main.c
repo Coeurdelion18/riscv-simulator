@@ -19,7 +19,8 @@ static void usage(const char *prog) {
         "  --batch              run to completion with no interaction, then dump state\n"
         "  --max-cycles N       cycle limit for --batch mode (default %llu)\n"
         "  --mem-size N         memory size in bytes (default %u)\n"
-        " --pipeline            run using pipeline stages",
+        " --pipeline            run using pipeline stages\n"
+        " --pipeline-forward    run using pipeline stages with forwarding\n",
         prog, (unsigned long long)DEFAULT_MAX_CYCLES, DEFAULT_MEM_SIZE);
 }
 
@@ -39,6 +40,8 @@ int main(int argc, char **argv) {
             batch_mode = 1;
         } else if (strcmp(argv[i], "--pipeline") == 0) {
             batch_mode = 2;
+        } else if (strcmp(argv[i], "--pipeline-forward") == 0) {
+            batch_mode = 3;
         } else if (strcmp(argv[i], "--max-cycles") == 0 && i + 1 < argc) {
             max_cycles = strtoull(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--mem-size") == 0 && i + 1 < argc) {
@@ -83,7 +86,10 @@ int main(int argc, char **argv) {
     if (batch_mode == 1) {
         run_batch(&cpu, &mem, max_cycles);
     } else if (batch_mode == 2) {
-        pipeline_init(&p);
+        pipeline_init(&p, 0); // Disable forwarding
+        pipeline_run_batch(&p, &cpu, &mem, max_cycles);
+    } else if(batch_mode ==3){
+        pipeline_init(&p, 1); // Enable forwarding
         pipeline_run_batch(&p, &cpu, &mem, max_cycles);
     } else {
         run_repl(&cpu, &mem);

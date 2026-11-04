@@ -57,10 +57,11 @@ typedef struct {
     IDEX id_ex;
     EXMEM ex_mem;
     MEMWB mem_wb;
-    uint64_t cycles, retired, stalls, flushes;
+    uint64_t cycles, retired, stalls, flushes, load_use_stalls, fwd_ex, fwd_mem;
+    int forwarding; // New flag to toggle forwarding mode
 } Pipeline;
 
-void pipeline_init(Pipeline* p);
+void pipeline_init(Pipeline* p, int forwarding);
 CPUStatus pipeline_cycle(Pipeline* p, CPUState* cpu, Memory* mem);
 void pipeline_run_batch(Pipeline* p, CPUState* cpu, Memory* mem, uint64_t max_cycles);
 

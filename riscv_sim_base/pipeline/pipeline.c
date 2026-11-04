@@ -1,6 +1,7 @@
 #include "pipeline_state.h"
 #include "cpu_state.h"
 #include "decoder.h"
+#include "hazard.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -48,8 +49,9 @@ static uint32_t alu(const DecodedInstr *i, uint32_t pc, uint32_t a, uint32_t b) 
     }
 }
 
-void pipeline_init(Pipeline *p) {
+void pipeline_init(Pipeline *p, int forwarding) {
     memset(p, 0, sizeof(Pipeline));
+    p->forwarding = forwarding;
 }
 
 void pipeline_run_batch(Pipeline *p, CPUState *cpu, Memory *mem, uint64_t max_cycles) {
@@ -66,6 +68,18 @@ void pipeline_run_batch(Pipeline *p, CPUState *cpu, Memory *mem, uint64_t max_cy
             break;
         }
     }
+    /*Print summary metrics at the end of execution */
+    printf("\npipeline: mode=%s cycles=%llu retired=%llu stalls=%llu flushes=%llu "
+       "CPI=%.3f fwd_ex=%llu fwd_mem=%llu load_use=%llu\n",
+       p->forwarding ? "forward" : "stall",
+       (unsigned long long)p->cycles,
+       (unsigned long long)p->retired,
+       (unsigned long long)p->stalls,
+       (unsigned long long)p->flushes,
+       (p->retired > 0) ? (double)p->cycles / (double)p->retired : 0.0,
+       (unsigned long long)p->fwd_ex,
+       (unsigned long long)p->fwd_mem,
+       (unsigned long long)p->load_use_stalls);
 }
 
 CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
@@ -106,7 +120,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             p->mem_wb.handler->execute(cpu, mem, &(p->mem_wb.instr));
             cpu->pc = temp_pc;
         }
-        p->retired++;
+        nx.retired++;
     }
     
     /* ----------------------------------------------------------------------
@@ -114,6 +128,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
      * ----------------------------------------------------------------------*/
 
     if(p->ex_mem.valid){
+        nx.mem_wb.valid = 1;
         nx.mem_wb.pc = p->ex_mem.pc;
         nx.mem_wb.fault = p->ex_mem.fault;
         nx.mem_wb.instr = p->ex_mem.instr;
@@ -128,9 +143,9 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                 int status = MEM_OK;
 
                 switch(p->ex_mem.instr.funct3){
-                    case 1: status = memory_read_byte(mem, p->ex_mem.alu_result, (int8_t*)&val); break; //LB
-                    case 2: status = memory_read_half(mem, p->ex_mem.alu_result, (int16_t*)&val); break; //LH
-                    case 3: status = memory_read_word(mem, p->ex_mem.alu_result, &val); break; //LW
+                    case 0: status = memory_read_byte(mem, p->ex_mem.alu_result, (int8_t*)&val); break; //LB
+                    case 1: status = memory_read_half(mem, p->ex_mem.alu_result, (int16_t*)&val); break; //LH
+                    case 2: status = memory_read_word(mem, p->ex_mem.alu_result, &val); break; //LW
                     case 4: 
                         status = memory_read_byte(mem, p->ex_mem.alu_result, (int8_t*)&val); 
                         val &= 0xFF;
@@ -157,7 +172,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                         
                         break;
                     case 1: status = memory_write_half(mem, p->ex_mem.alu_result, (int16_t)p->ex_mem.store_val); break;
-                    case 3: status = memory_write_word(mem, p->ex_mem.alu_result, p->ex_mem.store_val); break;
+                    case 2: status = memory_write_word(mem, p->ex_mem.alu_result, p->ex_mem.store_val); break;
                 }
 
                 if(status != MEM_OK){
@@ -170,22 +185,25 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
     /* =========================================================================
      * STAGE 3: EX (Execute) - Reads p->id_ex, Writes nx.ex_mem
      * ========================================================================= */
+    Operands o = forward_operands(p, &p->id_ex);
 
     if(p->id_ex.valid){
+        nx.fwd_ex  += o.fwd_ex;
+        nx.fwd_mem += o.fwd_mem;
         nx.ex_mem.valid = 1;
         nx.ex_mem.pc = p->id_ex.pc;
         nx.ex_mem.fault = p->id_ex.fault;
         nx.ex_mem.instr = p->id_ex.instr;
         nx.ex_mem.handler = p->id_ex.handler;
         nx.ex_mem.ctrl = p->id_ex.ctrl;
-        nx.ex_mem.store_val = p->id_ex.rs2_val;
+        nx.ex_mem.store_val = o.b;
     }
 
-    if(p->id_ex.fault == PF_NONE){
+    if(p->id_ex.valid && p->id_ex.fault  == PF_NONE){
         if(p->id_ex.ctrl.is_branch){
             int taken = 0;
-            uint32_t r1 = p->id_ex.rs1_val;
-            uint32_t r2 = p->id_ex.rs2_val;
+            uint32_t r1 = o.a;
+            uint32_t r2 = o.b;
 
             switch(p->id_ex.instr.funct3){
                 case 0: taken = (r1 == r2); break;
@@ -198,20 +216,21 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
 
             if(taken){
                 flush = 1;
+                nx.flushes++;
                 redirect_pc = p->id_ex.pc + p->id_ex.instr.imm;
             }
         } else if(p->id_ex.ctrl.is_jump){
             flush = 1;
-            p->flushes++;
+            nx.flushes++;
             nx.ex_mem.alu_result = p->id_ex.pc + 4;
 
             if (p->id_ex.instr.opcode == 0x6F) {
                 redirect_pc = p->id_ex.pc + p->id_ex.instr.imm;
             } else {
-                redirect_pc = (p->id_ex.rs1_val + p->id_ex.instr.imm) & ~1u;
+                redirect_pc = (o.a + p->id_ex.instr.imm) & ~1u;
             }
         } else {
-            nx.ex_mem.alu_result = alu(&(p->id_ex.instr), p->id_ex.pc, p->id_ex.rs1_val, p->id_ex.rs2_val);
+            nx.ex_mem.alu_result = alu(&(p->id_ex.instr), p->id_ex.pc, o.a, o.b);
         }
     }
 
@@ -232,21 +251,32 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             ControlSignals ctrl = control_decode(&d, h);
 
             /* Hazard Check: Test against instructions in EX and MEM stages */
-            int ex_hazard = p->id_ex.valid && p->id_ex.ctrl.reg_write && (p->id_ex.instr.rd != 0) &&
-                            ((ctrl.uses_rs1 && d.rs1 == p->id_ex.instr.rd) ||
-                                (ctrl.uses_rs2 && d.rs2 == p->id_ex.instr.rd));
+            // int ex_hazard = p->id_ex.valid && p->id_ex.ctrl.reg_write && (p->id_ex.instr.rd != 0) &&
+            //                 ((ctrl.uses_rs1 && d.rs1 == p->id_ex.instr.rd) ||
+            //                     (ctrl.uses_rs2 && d.rs2 == p->id_ex.instr.rd));
 
-            int mem_hazard = p->ex_mem.valid && p->ex_mem.ctrl.reg_write && (p->ex_mem.instr.rd != 0) &&
-                            ((ctrl.uses_rs1 && d.rs1 == p->ex_mem.instr.rd) ||
-                            (ctrl.uses_rs2 && d.rs2 == p->ex_mem.instr.rd));
+            // int mem_hazard = p->ex_mem.valid && p->ex_mem.ctrl.reg_write && (p->ex_mem.instr.rd != 0) &&
+            //                 ((ctrl.uses_rs1 && d.rs1 == p->ex_mem.instr.rd) ||
+            //                 (ctrl.uses_rs2 && d.rs2 == p->ex_mem.instr.rd));
             
-            if(ex_hazard || mem_hazard){
-                stall = 1;
-                p->stalls++;
-                /* Inject bubble into ID/EX */
-                nx.id_ex.valid = 0;
-                /* Keep IF/ID state frozen */
+            // if(ex_hazard || mem_hazard){
+            //     stall = 1;
+            //     p->stalls++;
+            //     /* Inject bubble into ID/EX */
+            //     nx.id_ex.valid = 0;
+            //     /* Keep IF/ID state frozen */
+            //     nx.if_id = p->if_id;
+
+            HazardVerdict hz = hazard_check(p, &d, &ctrl);
+            if(hz.stall){
+                //1. bubble enters EX this cycle
+                nx.id_ex.valid=0;
+                //2. IF/ID is frozen: consumer is re-decoded next cycle
                 nx.if_id = p->if_id;
+                //3. local flag stall: IF must not fetch
+                stall = 1;
+                nx.stalls++; // Use nx to update the next state's counter
+                if(hz.load_use) nx.load_use_stalls++;
             } else {
                 nx.id_ex.valid = 1;
                 nx.id_ex.pc = p->if_id.pc;
@@ -256,9 +286,9 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                 nx.id_ex.ctrl = ctrl;
                 nx.id_ex.rs1_val = cpu_read_reg(cpu, d.rs1);
                 nx.id_ex.rs2_val = cpu_read_reg(cpu, d.rs2);
+                }
             }
         }
-    }
 
     /* =========================================================================
      * STAGE 1: IF (Instruction Fetch) - Writes nx.if_id
@@ -280,7 +310,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             nx.if_id.raw = 0;
         } else {
             nx.if_id.fault = PF_NONE;
-            nx.if_id.raw = 1;
+            nx.if_id.raw = raw_instr;
         }
 
         cpu->pc = fetch_pc+4;
