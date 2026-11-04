@@ -1,8 +1,7 @@
 #include "control.h"
 
-#include "control.h"
-
 ControlSignals control_decode(const DecodedInstr* i, const InstructionHandler* h) {
+    (void)i;
     ControlSignals sig = {0};
 
     switch (h->format) {

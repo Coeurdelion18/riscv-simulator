@@ -48,4 +48,8 @@ test: $(BIN)
 	done
 
 clean:
-	rm -f $(OBJS) $(BIN)
+ifeq ($(OS),Windows_NT)
+	powershell.exe -NoProfile -Command "& { foreach ($$artifact in @($(foreach file,$(OBJS) $(BIN) $(BIN).exe,'$(file)',)'')) { if ($$artifact -and (Test-Path -LiteralPath $$artifact)) { Remove-Item -LiteralPath $$artifact -Force -ErrorAction Stop } } }"
+else
+	rm -f $(OBJS) $(BIN) $(BIN).exe
+endif
