@@ -16,6 +16,7 @@ SRCS := \
 	ui/cli_display.c \
 	pipeline/control.c \
 	pipeline/pipeline.c \
+	pipeline/hazard.c \
 	main.c
 
 OBJS := $(SRCS:.c=.o)
