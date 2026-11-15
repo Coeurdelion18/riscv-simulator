@@ -1,0 +1,35 @@
+assembled 'tests/f1_broad.s' ok. entry point = 0x00000000
+11
+---------------------------- registers ----------------------------
+x0 /zero=0x00000000  x8 /s0  =0x00000000  x16/a6  =0xfffffffc  x24/s8  =0x00000000  
+x1 /ra  =0x00000000  x9 /s1  =0x00000000  x17/a7  =0x0000000a  x25/s9  =0x00000000  
+x2 /sp  =0x00000000  x10/a0  =0x0000000b  x18/s2  =0x40200000  x26/s10 =0x00000000  
+x3 /gp  =0x000000a8  x11/a1  =0x00000001  x19/s3  =0x00000000  x27/s11 =0x00000000  
+x4 /tp  =0x00000000  x12/a2  =0x00000001  x20/s4  =0x00000000  x28/t3  =0x00000000  
+x5 /t0  =0xfffffff9  x13/a3  =0x00000000  x21/s5  =0x00000000  x29/t4  =0x00000000  
+x6 /t1  =0x00000040  x14/a4  =0x00000000  x22/s6  =0x00000000  x30/t5  =0x00000000  
+x7 /t2  =0x00000002  x15/a5  =0x00000002  x23/s7  =0x00000000  x31/t6  =0x00000000  
+------------------------- fp registers ----------------------------
+f0 /ft0 =0x40200000  f8 /fs0 =0xbfc00000  f16/fa6 =0x00000000  f24/fs8 =0x41180000  
+f1 /ft1 =0xc0800000  f9 /fs1 =0x40d00000  f17/fa7 =0x00000000  f25/fs9 =0xc0800000  
+f2 /ft2 =0x3f000000  f10/fa0 =0x40200000  f18/fs2 =0xc1200000  f26/fs10=0x40200000  
+f3 /ft3 =0xc0e00000  f11/fa1 =0xc0200000  f19/fs3 =0x40a00000  f27/fs11=0xc0200000  
+f4 /ft4 =0x40200000  f12/fa2 =0x40800000  f20/fs4 =0x3fca62c2  f28/ft8 =0x00000000  
+f5 /ft5 =0x40d00000  f13/fa3 =0xc0200000  f21/fs5 =0xc1180000  f29/ft9 =0x00000000  
+f6 /ft6 =0x41380000  f14/fa4 =0x00000000  f22/fs6 =0xc1280000  f30/ft10=0x00000000  
+f7 /ft7 =0x00000000  f15/fa5 =0x00000000  f23/fs7 =0x41280000  f31/ft11=0x00000000  
+fcsr =0x00000001  (frm=0  flags: NX)
+pc = 0x000000a4
+status = ECALL_EXIT   cycles = 46
+pipeline        = 5-stage, hazard unit 'forward', predictor '2bit'
+retired         = 42
+CPI             = 1.095
+stalls          = 0
+forwards        = 10
+branches        = 0
+mispredicts     = 0
+accuracy        = 100.0%
+jal             = 0
+jalr            = 0
+redirects       = 0
+squashed        = 0

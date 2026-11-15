@@ -3,6 +3,7 @@
 #include "decoder.h"
 #include "cli_display.h"
 #include "hazard.h"
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -50,18 +51,28 @@ static uint32_t alu(const DecodedInstr *i, uint32_t pc, uint32_t a, uint32_t b) 
     }
 }
 
-// static int depends_on(const DecodedInstr *i, const ControlSignals *ctrl,
-//                       int valid, int fault, const DecodedInstr *producer,
-//                       const ControlSignals *producer_ctrl) {
-//     return valid && fault == PF_NONE && producer_ctrl->reg_write &&
-//            producer->rd != 0 &&
-//            ((ctrl->uses_rs1 && i->rs1 == producer->rd) ||
-//             (ctrl->uses_rs2 && i->rs2 == producer->rd));
-// }
-
-void pipeline_init(Pipeline *p, int forwarding) {
-    memset(p, 0, sizeof(Pipeline));
+void pipeline_init(Pipeline *p, int forwarding, const BranchPredictor *predictor) {
+    memset(p, 0, sizeof(*p));
     p->forwarding = forwarding;
+    p->predictor = predictor;
+    predictor->reset(&p->bp_state);
+}
+
+static void trace_slot(const char *stage, int valid, uint32_t pc) {
+    if (valid)
+        fprintf(stderr, " %s 0x%08" PRIx32, stage, pc);
+    else
+        fprintf(stderr, " %s ----------", stage);
+}
+
+static void trace_cycle(const Pipeline *p, uint32_t fetch_pc) {
+    fprintf(stderr, "[cycle %" PRIu64 "]", p->cycles + 1);
+    trace_slot("IF", 1, fetch_pc);
+    trace_slot("| ID", p->if_id.valid, p->if_id.pc);
+    trace_slot("| EX", p->id_ex.valid, p->id_ex.pc);
+    trace_slot("| MEM", p->ex_mem.valid, p->ex_mem.pc);
+    trace_slot("| WB", p->mem_wb.valid, p->mem_wb.pc);
+    fputc('\n', stderr);
 }
 
 void pipeline_run_batch(Pipeline *p, CPUState *cpu, Memory *mem, uint64_t max_cycles) {
@@ -72,17 +83,25 @@ void pipeline_run_batch(Pipeline *p, CPUState *cpu, Memory *mem, uint64_t max_cy
     printf("\n");
     print_registers(cpu);
     print_status(cpu);
-    printf("pipeline: mode=%s cycles=%llu retired=%llu stalls=%llu flushes=%llu "
-           "CPI=%.3f fwd_ex=%llu fwd_mem=%llu load_use=%llu\n",
-           p->forwarding ? "forward" : "stall",
-           (unsigned long long)p->cycles,
-           (unsigned long long)p->retired,
-           (unsigned long long)p->stalls,
-           (unsigned long long)p->flushes,
-           (p->retired > 0) ? (double)p->cycles / (double)p->retired : 0.0,
-           (unsigned long long)p->fwd_ex,
-           (unsigned long long)p->fwd_mem,
-           (unsigned long long)p->load_use_stalls);
+    double cpi = p->retired ? (double)p->cycles / p->retired : 0.0;
+    double accuracy = p->branches ?
+        100.0 * (p->branches - p->mispredicts) / p->branches : 0.0;
+    printf("pipeline        = 5-stage, hazard unit '%s', predictor '%s'\n"
+           "retired         = %" PRIu64 "\n"
+           "CPI             = %.3f\n"
+           "stalls          = %" PRIu64 "\n"
+           "forwards        = %" PRIu64 "\n"
+           "branches        = %" PRIu64 "\n"
+           "mispredicts     = %" PRIu64 "\n"
+           "accuracy        = %.1f%%\n"
+           "jal             = %" PRIu64 "\n"
+           "jalr            = %" PRIu64 "\n"
+           "redirects       = %" PRIu64 "\n"
+           "squashed        = %" PRIu64 "\n"
+           "load_use_stalls = %" PRIu64 "\n",
+           p->forwarding ? "forward" : "stall", p->predictor->name, p->retired,
+           cpi, p->stalls, p->fwd_ex + p->fwd_mem, p->branches, p->mispredicts,
+           accuracy, p->jal, p->jalr, p->redirects, 2 * p->redirects, p->load_use_stalls);
     if (cpu->status == CPU_RUNNING)
         printf("  -> stopped: reached max cycle limit (%llu)\n",
                (unsigned long long)max_cycles);
@@ -91,6 +110,9 @@ void pipeline_run_batch(Pipeline *p, CPUState *cpu, Memory *mem, uint64_t max_cy
 CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
     if (cpu->status != CPU_RUNNING)
         return cpu->status;
+
+    if (p->trace)
+        trace_cycle(p, cpu->pc);
 
     Pipeline nx = *p;
     nx.cycles++;
@@ -103,8 +125,6 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
     uint32_t redirect_pc = 0;
 
     if (p->mem_wb.valid) {
-        // nx.stalls += p->mem_wb.stall_cycles;
-        // nx.flushes += p->mem_wb.redirected;
         if (p->mem_wb.fault != PF_NONE) {
             cpu->status = p->mem_wb.fault == PF_ILLEGAL ?
                           CPU_ILLEGAL_INSTRUCTION : CPU_MEM_FAULT;
@@ -124,8 +144,21 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             cpu->pc = fetch_pc;
         }
         nx.retired++;
+        nx.stalls += p->mem_wb.stall_cycles;
+        nx.load_use_stalls += p->mem_wb.load_use_cycles;
+        nx.fwd_ex += p->mem_wb.fwd_ex;
+        nx.fwd_mem += p->mem_wb.fwd_mem;
+        nx.branches += p->mem_wb.ctrl.is_branch;
+        nx.mispredicts += p->mem_wb.mispredicted;
+        nx.redirects += p->mem_wb.redirected;
+        if (p->mem_wb.ctrl.is_jump) {
+            if (p->mem_wb.instr.opcode == 0x6f)
+                nx.jal++;
+            else
+                nx.jalr++;
+        }
         if (cpu->status != CPU_RUNNING)
-            goto commit; 
+            goto commit;
     }
 
     if (p->ex_mem.valid) {
@@ -137,6 +170,10 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
         nx.mem_wb.ctrl = p->ex_mem.ctrl;
         nx.mem_wb.wb_val = p->ex_mem.alu_result;
         nx.mem_wb.fault_addr = p->ex_mem.fault_addr;
+        nx.mem_wb.load_use_cycles = p->ex_mem.load_use_cycles;
+        nx.mem_wb.fwd_ex = p->ex_mem.fwd_ex;
+        nx.mem_wb.fwd_mem = p->ex_mem.fwd_mem;
+        nx.mem_wb.mispredicted = p->ex_mem.mispredicted;
         nx.mem_wb.stall_cycles = p->ex_mem.stall_cycles;
         nx.mem_wb.redirected = p->ex_mem.redirected;
         if (p->ex_mem.fault == PF_NONE) {
@@ -178,8 +215,10 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
     Operands o = forward_operands(p, &p->id_ex);
 
     if(p->id_ex.valid){
-        nx.fwd_ex  += o.fwd_ex;
-        nx.fwd_mem += o.fwd_mem;
+        nx.ex_mem.fwd_ex = o.fwd_ex;
+        nx.ex_mem.fwd_mem = o.fwd_mem;
+        nx.ex_mem.stall_cycles = p->id_ex.stall_cycles;
+        nx.ex_mem.load_use_cycles = p->id_ex.load_use_cycles;
         nx.ex_mem.valid = 1;
         nx.ex_mem.pc = p->id_ex.pc;
         nx.ex_mem.fault = p->id_ex.fault;
@@ -205,26 +244,24 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                 case 7: taken = (r1 >= r2); break;
             }
 
-            if(taken){
-                flush = 1;
-                nx.flushes++;
-                redirect_pc = p->id_ex.pc + p->id_ex.instr.imm;
-            }
+            uint32_t pc = p->id_ex.pc;
+            uint32_t target = pc + (uint32_t)p->id_ex.instr.imm;
+            p->predictor->update(&nx.bp_state, pc, target, taken);
+            nx.ex_mem.mispredicted = taken != p->id_ex.pred_taken;
+            redirect_pc = taken ? target : pc + 4;
+            flush = redirect_pc != p->id_ex.pred_next;
         } else if(p->id_ex.ctrl.is_jump){
-            flush = 1;
-            nx.flushes++;
             nx.ex_mem.alu_result = p->id_ex.pc + 4;
-
-            if (p->id_ex.instr.opcode == 0x6F) {
-                redirect_pc = p->id_ex.pc + p->id_ex.instr.imm;
-            } else {
-                redirect_pc = (o.a + p->id_ex.instr.imm) & ~1u;
-            }
+            if (p->id_ex.instr.opcode == 0x6f)
+                redirect_pc = p->id_ex.pc + (uint32_t)p->id_ex.instr.imm;
+            else
+                redirect_pc = (o.a + (uint32_t)p->id_ex.instr.imm) & ~1u;
+            flush = redirect_pc != p->id_ex.pred_next;
         } else {
             nx.ex_mem.alu_result = alu(&(p->id_ex.instr), p->id_ex.pc, o.a, o.b);
         }
     }
-    // nx.ex_mem.redirected = flush;
+    nx.ex_mem.redirected = flush;
 
     /* ID: preserve fetch faults before attempting to decode their raw word. */
     if (p->if_id.valid && !flush) {
@@ -233,30 +270,24 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
         nx.id_ex.valid = 1;
         nx.id_ex.pc = p->if_id.pc;
         nx.id_ex.stall_cycles = p->if_id.stall_cycles;
+        nx.id_ex.load_use_cycles = p->if_id.load_use_cycles;
+        nx.id_ex.pred_next = p->if_id.pred_next;
+        nx.id_ex.pred_taken = p->if_id.pred_taken;
         if (p->if_id.fault != PF_NONE) {
             nx.id_ex.fault = p->if_id.fault;
         } else if (decode_instruction(p->if_id.raw, &d, &h) != DECODE_OK) {
             nx.id_ex.fault = PF_ILLEGAL;
         } else {
             ControlSignals ctrl = control_decode(&d, h);
-
-            /* Hazard Check: Test against instructions in EX and MEM stages */
-            // int ex_hazard = p->id_ex.valid && p->id_ex.ctrl.reg_write && (p->id_ex.instr.rd != 0) &&
-            //                 ((ctrl.uses_rs1 && d.rs1 == p->id_ex.instr.rd) ||
-            //                     (ctrl.uses_rs2 && d.rs2 == p->id_ex.instr.rd));
-
-            // int mem_hazard = p->ex_mem.valid && p->ex_mem.ctrl.reg_write && (p->ex_mem.instr.rd != 0) &&
-            //                 ((ctrl.uses_rs1 && d.rs1 == p->ex_mem.instr.rd) ||
-            //                 (ctrl.uses_rs2 && d.rs2 == p->ex_mem.instr.rd));
-            
-            // if(ex_hazard || mem_hazard){
-            //     stall = 1;
-            //     p->stalls++;
-            //     /* Inject bubble into ID/EX */
-            //     nx.id_ex.valid = 0;
-            //     /* Keep IF/ID state frozen */
-            //     nx.if_id = p->if_id;
-
+            /* In forwarding mode, include the syscall ABI's implicit inputs
+             * in dependency checks and forwarding statistics. The syscall
+             * handler still runs at WB with the committed register file. */
+            if (p->forwarding && ctrl.is_system) {
+                d.rs1 = 10; /* a0: argument */
+                d.rs2 = 17; /* a7: syscall number */
+                ctrl.uses_rs1 = 1;
+                ctrl.uses_rs2 = 1;
+            }
             HazardVerdict hz = hazard_check(p, &d, &ctrl);
             if(hz.stall){
                 //1. bubble enters EX this cycle
@@ -265,39 +296,49 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                 nx.if_id = p->if_id;
                 //3. local flag stall: IF must not fetch
                 stall = 1;
-                nx.stalls++; // Use nx to update the next state's counter
-                if(hz.load_use) nx.load_use_stalls++;
+                nx.if_id.stall_cycles++;
+                nx.if_id.load_use_cycles += hz.load_use;
             } else {
                 nx.id_ex.instr = d;
                 nx.id_ex.handler = h;
                 nx.id_ex.ctrl = ctrl;
                 nx.id_ex.rs1_val = cpu_read_reg(cpu, d.rs1);
                 nx.id_ex.rs2_val = cpu_read_reg(cpu, d.rs2);
+            }
+        }
+    }
+
+    /* Recovery discards ID and the current IF slot. Fetch resumes next cycle. */
+    if (flush) {
+        cpu->pc = redirect_pc;
+    } else if (!stall) {
+        uint32_t fetch_pc = cpu->pc;
+        uint32_t raw_instr;
+        nx.if_id.valid = 1;
+        nx.if_id.pc = fetch_pc;
+        nx.if_id.pred_next = fetch_pc + 4;
+        if (memory_read_word(mem, fetch_pc, &raw_instr) != MEM_OK) {
+            nx.if_id.fault = PF_FETCH;
+        } else {
+            nx.if_id.raw = raw_instr;
+            uint32_t opcode = raw_instr & 0x7f;
+            if (opcode == 0x63 || opcode == 0x6f) {
+                DecodedInstr decoded;
+                const InstructionHandler *handler;
+                if (decode_instruction(raw_instr, &decoded, &handler) == DECODE_OK) {
+                    uint32_t target = fetch_pc + (uint32_t)decoded.imm;
+                    if (opcode == 0x6f) {
+                        nx.if_id.pred_next = target;
+                    } else {
+                        nx.if_id.pred_taken = p->predictor->predict(&nx.bp_state, fetch_pc, target);
+                        if (nx.if_id.pred_taken)
+                            nx.if_id.pred_next = target;
+                    }
                 }
             }
         }
-
-    /* IF: freeze both the latch and fetch PC during a data stall. */
-    if (!stall) {
-        uint32_t fetch_pc = flush ? redirect_pc : cpu->pc;
-        uint32_t raw_instr = 0;
-
-        int fetch_status = memory_read_word(mem, fetch_pc, &raw_instr);
-
-        nx.if_id.valid = 1;
-        nx.if_id.pc = fetch_pc;
-
-        if (fetch_status != MEM_OK){
-            nx.if_id.fault = PF_FETCH;
-            nx.if_id.raw = 0;
-        } else {
-            nx.if_id.fault = PF_NONE;
-            nx.if_id.raw = raw_instr;
-        }
-
-        cpu->pc = fetch_pc+4;
-
-     }
+        cpu->pc = nx.if_id.pred_next;
+    }
 
 commit:
     *p = nx;

@@ -1,0 +1,35 @@
+assembled 'tests/f2_special.s' ok. entry point = 0x00000000
+12
+---------------------------- registers ----------------------------
+x0 /zero=0x00000000  x8 /s0  =0x00000000  x16/a6  =0x00000002  x24/s8  =0x00000010  
+x1 /ra  =0x00000000  x9 /s1  =0x00000008  x17/a7  =0x0000000a  x25/s9  =0x00000000  
+x2 /sp  =0x00000000  x10/a0  =0x0000000c  x18/s2  =0x00000010  x26/s10 =0x00000010  
+x3 /gp  =0x00000108  x11/a1  =0x00000000  x19/s3  =0x00000005  x27/s11 =0x00000002  
+x4 /tp  =0x00000000  x12/a2  =0x00000000  x20/s4  =0x00000003  x28/t3  =0x00000080  
+x5 /t0  =0x00000128  x13/a3  =0x00000000  x21/s5  =0x00000010  x29/t4  =0x00000200  
+x6 /t1  =0x00000003  x14/a4  =0x00000010  x22/s6  =0x00000000  x30/t5  =0x00000100  
+x7 /t2  =0x00000003  x15/a5  =0x00000010  x23/s7  =0x00000010  x31/t6  =0x00000002  
+------------------------- fp registers ----------------------------
+f0 /ft0 =0x3f800000  f8 /fs0 =0x7f800000  f16/fa6 =0x00000000  f24/fs8 =0x3f800000  
+f1 /ft1 =0x00000000  f9 /fs1 =0x7fc00000  f17/fa7 =0x00000000  f25/fs9 =0x3f800000  
+f2 /ft2 =0x7f7fffff  f10/fa0 =0x00000000  f18/fs2 =0x7f800000  f26/fs10=0x00000000  
+f3 /ft3 =0x00800000  f11/fa1 =0x00000000  f19/fs3 =0x00000000  f27/fs11=0x00000000  
+f4 /ft4 =0x7f800000  f12/fa2 =0x00000000  f20/fs4 =0x7fc00000  f28/ft8 =0x40200000  
+f5 /ft5 =0x7fc00000  f13/fa3 =0x00000000  f21/fs5 =0x7fc00000  f29/ft9 =0x00000000  
+f6 /ft6 =0x7fa00000  f14/fa4 =0x00000000  f22/fs6 =0x7fc00000  f30/ft10=0x00000000  
+f7 /ft7 =0xbf800000  f15/fa5 =0x00000000  f23/fs7 =0x7fc00000  f31/ft11=0x00000000  
+fcsr =0x00000011  (frm=0  flags: NV NX)
+pc = 0x00000104
+status = ECALL_EXIT   cycles = 71
+pipeline        = 5-stage, hazard unit 'forward', predictor '2bit'
+retired         = 66
+CPI             = 1.076
+stalls          = 1
+forwards        = 12
+branches        = 0
+mispredicts     = 0
+accuracy        = 100.0%
+jal             = 0
+jalr            = 0
+redirects       = 0
+squashed        = 0

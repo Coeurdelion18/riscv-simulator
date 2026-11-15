@@ -4,6 +4,10 @@ CFLAGS  := -std=c11 -Wall -Wextra -g -O0 \
 LDFLAGS :=
 
 BIN := rvsim
+ifeq ($(OS),Windows_NT)
+BIN := rvsim.exe
+endif
+PYTHON ?= python
 
 SRCS := \
 	core/cpu_state.c \
@@ -17,6 +21,9 @@ SRCS := \
 	pipeline/control.c \
 	pipeline/pipeline.c \
 	pipeline/hazard.c \
+	pipeline/branch_predictor.c \
+	pipeline/bp_static.c \
+	pipeline/bp_dynamic.c \
 	main.c
 
 OBJS := $(SRCS:.c=.o)
@@ -31,25 +38,23 @@ $(BIN): $(OBJS)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+main.o pipeline/pipeline.o pipeline/hazard.o: pipeline/pipeline_state.h pipeline/branch_predictor.h
+pipeline/branch_predictor.o pipeline/bp_static.o pipeline/bp_dynamic.o: pipeline/branch_predictor.h
+
 # Example: make run PROG=tests/sample1.s
 run: $(BIN)
-	./$(BIN) $(PROG) --batch
+	./$(BIN) $(PROG) --batch --single-cycle
 
 # Requires valgrind installed. Example: make memcheck PROG=tests/sample1.s
 memcheck: $(BIN)
-	valgrind --error-exitcode=1 --leak-check=full ./$(BIN) $(PROG) --batch
+	valgrind --error-exitcode=1 --leak-check=full ./$(BIN) $(PROG) --batch --single-cycle
 
-# Runs every .s file under tests/ in batch mode, just to smoke-test the build.
 test: $(BIN)
-	@for f in tests/*.s; do \
-		echo "=== $$f ==="; \
-		./$(BIN) "$$f" --batch || exit 1; \
-		echo; \
-	done
+	$(PYTHON) pipeline/tests/verify_branch.py ./$(BIN)
 
 clean:
 ifeq ($(OS),Windows_NT)
-	powershell.exe -NoProfile -Command "& { foreach ($$artifact in @($(foreach file,$(OBJS) $(BIN) $(BIN).exe,'$(file)',)'')) { if ($$artifact -and (Test-Path -LiteralPath $$artifact)) { Remove-Item -LiteralPath $$artifact -Force -ErrorAction Stop } } }"
+	powershell.exe -NoProfile -Command "& { foreach ($$artifact in @($(foreach file,$(OBJS) rvsim rvsim.exe,'$(file)',)'')) { if ($$artifact -and (Test-Path -LiteralPath $$artifact)) { Remove-Item -LiteralPath $$artifact -Force -ErrorAction Stop } } }"
 else
 	rm -f $(OBJS) $(BIN) $(BIN).exe
 endif
