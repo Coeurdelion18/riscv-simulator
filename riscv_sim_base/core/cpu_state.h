@@ -4,6 +4,14 @@
 #include <stdint.h>
 
 #define NUM_REGS 32
+#define NUM_FREGS 32
+
+/* fcsr (Floating point Control and Status Register) flag bits (fflags = fcsr[4:0], frm = fcsr[7:5]) */
+#define FFLAG_NX 0x01u
+#define FFLAG_UF 0x02u
+#define FFLAG_OF 0x04u
+#define FFLAG_DZ 0x08u
+#define FFLAG_NV 0x10u
 
 /* Overall machine status. This is the C substitute for exceptions:
  * every layer of the simulator checks/sets this instead of throwing. */
@@ -17,6 +25,8 @@ typedef enum {
 
 typedef struct {
     uint32_t regs[NUM_REGS];    /* x0..x31. x0 is always read as 0 (enforced in accessors) */
+    uint32_t fregs[NUM_FREGS];
+    uint32_t fcsr;
     uint32_t pc;
     uint32_t next_pc;           /* instruction handlers write here; executor commits it to pc */
     CPUStatus status;
@@ -42,5 +52,13 @@ const char *cpu_reg_abi_name(int idx);
 int cpu_reg_index_from_name(const char *name);
 
 const char *cpu_status_str(CPUStatus status);
+
+// Floating point:
+uint32_t cpu_read_freg(const CPUState *cpu, int idx);
+void     cpu_write_freg(CPUState *cpu, int idx, uint32_t bits);
+void     cpu_raise_fflags(CPUState *cpu, uint32_t flags);  /* sticky OR, never clears */
+uint32_t cpu_frm(const CPUState *cpu);
+int cpu_freg_index_from_name(const char *name);   /* -1 if not an f register */
+const char *cpu_freg_abi_name(int idx);
 
 #endif /* CPU_STATE_H */

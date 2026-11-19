@@ -1,0 +1,25 @@
+assembled 'tests/b3_applied.s' ok. entry point = 0x00000000
+697645586
+---------------------------- registers ----------------------------
+x0 /zero=0x00000000  x8 /s0  =0x00000254  x16/a6  =0x00000000  x24/s8  =0x00000000  
+x1 /ra  =0x00000180  x9 /s1  =0x00000010  x17/a7  =0x0000000a  x25/s9  =0x00000000  
+x2 /sp  =0x00000398  x10/a0  =0x00000056  x18/s2  =0x00000000  x26/s10 =0x00000000  
+x3 /gp  =0x00000000  x11/a1  =0x00000015  x19/s3  =0x00000000  x27/s11 =0x00000000  
+x4 /tp  =0x00000000  x12/a2  =0x00000000  x20/s4  =0x000002b9  x28/t3  =0x0000000f  
+x5 /t0  =0x00000002  x13/a3  =0x00000000  x21/s5  =0x00000040  x29/t4  =0x00000290  
+x6 /t1  =0x0000000f  x14/a4  =0x00000000  x22/s6  =0x00000037  x30/t5  =0x00000063  
+x7 /t2  =0x0000000f  x15/a5  =0x00000000  x23/s7  =0x00000056  x31/t6  =0x00000000  
+pc = 0x00000194
+status = ECALL_EXIT   cycles = 3970
+pipeline        = 5-stage, hazard unit 'forward', predictor '1bit'
+retired         = 3195
+CPI             = 1.243
+stalls          = 115
+forwards        = 1138
+branches        = 510
+mispredicts     = 137
+accuracy        = 73.1%
+jal             = 336
+jalr            = 191
+redirects       = 328
+squashed        = 656

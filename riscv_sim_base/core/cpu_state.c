@@ -10,8 +10,17 @@ static const char *abi_names[NUM_REGS] = {
     "s8","s9","s10","s11","t3","t4","t5","t6"
 };
 
+static const char *fabi_names[NUM_FREGS] = {
+    "ft0","ft1","ft2","ft3","ft4","ft5","ft6","ft7",
+    "fs0","fs1","fa0","fa1","fa2","fa3","fa4","fa5",
+    "fa6","fa7","fs2","fs3","fs4","fs5","fs6","fs7",
+    "fs8","fs9","fs10","fs11","ft8","ft9","ft10","ft11"
+};
+
 void cpu_reset(CPUState *cpu, uint32_t start_pc) {
     memset(cpu->regs, 0, sizeof(cpu->regs));
+    memset(cpu->fregs, 0, sizeof(cpu->fregs));   /* new: f0..f31 = 0 */
+    cpu->fcsr = 0; /* new: frm = rne (0), no flags */
     cpu->pc = start_pc;
     cpu->next_pc = start_pc;
     cpu->status = CPU_RUNNING;
@@ -52,6 +61,23 @@ int cpu_reg_index_from_name(const char *name) {
     return -1;
 }
 
+int cpu_freg_index_from_name(const char *name) {
+    if (!name || !*name) return -1;
+    if (name[0] == 'f' && isdigit((unsigned char)name[1])) {   /* f0..f31 */
+        char *end;
+        long v = strtol(name + 1, &end, 10);
+        if (*end == '\0' && v >= 0 && v < NUM_FREGS) return (int)v;
+        return -1;
+    }
+    for (int i = 0; i < NUM_FREGS; i++)
+        if (strcmp(name, fabi_names[i]) == 0) return i;
+    return -1;
+}
+
+const char *cpu_freg_abi_name(int idx) {
+    return fabi_names[idx & 0x1F];
+}
+
 const char *cpu_status_str(CPUStatus status) {
     switch (status) {
         case CPU_RUNNING:              return "RUNNING";
@@ -61,4 +87,22 @@ const char *cpu_status_str(CPUStatus status) {
         case CPU_ECALL_EXIT:            return "ECALL_EXIT";
         default:                        return "UNKNOWN";
     }
+}
+
+uint32_t cpu_read_freg(const CPUState *cpu, int idx) {
+    if (idx < 0 || idx >= NUM_FREGS) return 0;
+    return cpu->fregs[idx];
+}
+
+void cpu_write_freg(CPUState *cpu, int idx, uint32_t bits) {
+    if (idx < 0 || idx >= NUM_FREGS) return;
+    cpu->fregs[idx] = bits;
+}
+
+void cpu_raise_fflags(CPUState *cpu, uint32_t flags) {
+    cpu->fcsr |= (flags & 0x1Fu);
+}
+
+uint32_t cpu_frm(const CPUState *cpu) {
+    return (cpu->fcsr >> 5) & 0x7u;
 }

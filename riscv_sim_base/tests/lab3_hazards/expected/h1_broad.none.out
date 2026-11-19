@@ -1,0 +1,21 @@
+assembled 'tests/h1_broad.s' ok. entry point = 0x00000000
+
+---------------------------- registers ----------------------------
+x0 /zero=0x00000000  x8 /s0  =0x00000001  x16/a6  =0x00000000  x24/s8  =0x00000000  
+x1 /ra  =0x00000000  x9 /s1  =0x00000001  x17/a7  =0x00000000  x25/s9  =0x00000005  
+x2 /sp  =0x00000000  x10/a0  =0x00000000  x18/s2  =0x0000001f  x26/s10 =0x00000000  
+x3 /gp  =0x000000b4  x11/a1  =0x00000004  x19/s3  =0x00000029  x27/s11 =0x00000000  
+x4 /tp  =0x00000000  x12/a2  =0x00000004  x20/s4  =0x00000004  x28/t3  =0x00000028  
+x5 /t0  =0x000000a2  x13/a3  =0x00000000  x21/s5  =0x00000001  x29/t4  =0x00000009  
+x6 /t1  =0x00000094  x14/a4  =0x00000000  x22/s6  =0x00000001  x30/t5  =0x00a00293  
+x7 /t2  =0x0000001e  x15/a5  =0x00000000  x23/s7  =0x00000001  x31/t6  =0x00000014  
+pc = 0x0000000a
+status = ILLEGAL_INSTRUCTION   cycles = 45
+  -> unknown instruction 0x00130140 at pc=0x0000000a (no handler registered)
+pipeline        = 5-stage, hazard unit 'none'
+retired         = 36
+CPI             = 1.250
+stalls          = 0
+forwards        = 0
+redirects       = 2
+squashed        = 4

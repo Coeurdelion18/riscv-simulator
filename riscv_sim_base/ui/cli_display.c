@@ -5,6 +5,27 @@
 #include <stdlib.h>
 #include <ctype.h>
 
+static void print_fp_state(const CPUState *cpu) {
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 4; col++) {
+            int idx = row + col * 8;
+            printf("f%-2d/%-4s=0x%08x  ", idx, cpu_freg_abi_name(idx), cpu_read_freg(cpu, idx));
+        }
+        printf("\n");
+    }
+    uint32_t v = cpu->fcsr;
+    static const struct { uint32_t bit; const char *name; } fl[] = {
+        {FFLAG_NV,"NV"},{FFLAG_DZ,"DZ"},{FFLAG_OF,"OF"},{FFLAG_UF,"UF"},{FFLAG_NX,"NX"}
+    };
+    printf("fcsr =0x%08x (frm=%u flags:", v, (v >> 5) & 7u);
+    int any = 0;
+    for (unsigned k = 0; k < sizeof fl / sizeof fl[0]; k++)
+        if (v & fl[k].bit) { printf(" %s", fl[k].name); any = 1; }
+    printf("%s)\n", any ? "" : " none");
+}
+
+
+
 void print_registers(const CPUState *cpu) {
     printf("---------------------------- registers ----------------------------\n");
     for (int row = 0; row < 8; row++) {
@@ -15,7 +36,9 @@ void print_registers(const CPUState *cpu) {
         printf("\n");
     }
     printf("pc = 0x%08x\n", cpu->pc);
+    print_fp_state(cpu);          /* new */
 }
+
 
 void print_status(const CPUState *cpu) {
     printf("status = %s   cycles = %llu\n", cpu_status_str(cpu->status),

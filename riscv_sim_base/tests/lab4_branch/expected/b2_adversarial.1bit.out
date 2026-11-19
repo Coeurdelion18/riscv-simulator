@@ -1,0 +1,25 @@
+assembled 'tests/b2_adversarial.s' ok. entry point = 0x00000000
+4078
+---------------------------- registers ----------------------------
+x0 /zero=0x00000000  x8 /s0  =0x00000fee  x16/a6  =0x00000000  x24/s8  =0x00000000  
+x1 /ra  =0x00000000  x9 /s1  =0x00000014  x17/a7  =0x0000000a  x25/s9  =0x00000000  
+x2 /sp  =0x00000000  x10/a0  =0x00000fee  x18/s2  =0x00000014  x26/s10 =0x00000000  
+x3 /gp  =0x00000000  x11/a1  =0x00000000  x19/s3  =0x00000014  x27/s11 =0x00000000  
+x4 /tp  =0x00000000  x12/a2  =0x00000000  x20/s4  =0x00000000  x28/t3  =0x00000003  
+x5 /t0  =0x0000003c  x13/a3  =0x00000000  x21/s5  =0x00000000  x29/t4  =0x00000001  
+x6 /t1  =0x0000003c  x14/a4  =0x00000000  x22/s6  =0x00000000  x30/t5  =0x00000002  
+x7 /t2  =0x00000001  x15/a5  =0x00000000  x23/s7  =0x00000000  x31/t6  =0x00000000  
+pc = 0x000003fc
+status = ECALL_EXIT   cycles = 5033
+pipeline        = 5-stage, hazard unit 'forward', predictor '1bit'
+retired         = 4739
+CPI             = 1.062
+stalls          = 0
+forwards        = 4185
+branches        = 364
+mispredicts     = 145
+accuracy        = 60.2%
+jal             = 40
+jalr            = 0
+redirects       = 145
+squashed        = 290

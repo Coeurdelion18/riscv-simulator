@@ -9,9 +9,12 @@ DecodeStatus decode_instruction(uint32_t raw, DecodedInstr *out, const Instructi
     uint32_t funct3 = (raw >> 12) & 0x7;
     uint32_t rs1    = (raw >> 15) & 0x1F;
     uint32_t rs2    = (raw >> 20) & 0x1F;
+    uint32_t rs3    = (raw >> 27) & 0x1F;
+    uint32_t csr    = (raw >> 20) & 0xFFF;
     uint32_t funct7 = (raw >> 25) & 0x7F;
 
-    const InstructionHandler *h = isa_find_by_opcode(opcode, funct3, funct7);
+    // const InstructionHandler *h = isa_find_by_opcode(opcode, funct3, funct7);
+    const InstructionHandler *h = isa_find_by_encoding(opcode, funct3, funct7, rs2);
     if (!h) {
         *handler_out = NULL;
         return DECODE_UNKNOWN_INSTRUCTION;
@@ -20,8 +23,14 @@ DecodeStatus decode_instruction(uint32_t raw, DecodedInstr *out, const Instructi
     int32_t imm = 0;
     switch (h->format) {
         case FMT_R:
+        case FMT_R2:
+        case FMT_R4:
         case FMT_I_SYS:
             imm = 0;
+            break;
+
+        case FMT_CSR:
+            imm = (int32_t)csr;      /* CSR number, unsigned 12 bits */
             break;
 
         case FMT_I:
@@ -77,6 +86,8 @@ DecodeStatus decode_instruction(uint32_t raw, DecodedInstr *out, const Instructi
     out->rd     = rd;
     out->rs1    = rs1;
     out->rs2    = rs2;
+    out->rs3    = rs3;
+    out->csr    = csr;
     out->imm    = imm;
     out->raw    = raw;
 

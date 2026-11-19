@@ -30,7 +30,10 @@ typedef enum {
     FMT_S,        /* rs2, imm(rs1)                   e.g. sw   a0, 0(sp)       */
     FMT_B,        /* rs1, rs2, label                 e.g. beq  a0, a1, foo     */
     FMT_U,        /* rd, imm                         e.g. lui  a0, 0x10000     */
-    FMT_J         /* rd, label                       e.g. jal  ra, foo        */
+    FMT_J,        /* rd, label                       e.g. jal  ra, foo        */
+    FMT_R2,       /* rd, rs1 (rs2 is part of the opcode)   e.g. fsqrt.s fa0, fa1 */
+    FMT_R4,       /* rd, rs1, rs2, rs3               e.g. fmadd.s            */
+    FMT_CSR       /* rd, csr, rs1/uimm               e.g. csrrw              */
 } InstrFormat;
 
 typedef struct {
@@ -38,6 +41,8 @@ typedef struct {
     uint32_t funct3;
     uint32_t funct7;
     uint32_t rd, rs1, rs2;
+    uint32_t rs3;        /* new: raw[31:27], meaningful for FMT_R4 */
+    uint32_t csr;        /* new: raw[31:20], meaningful for FMT_CSR */
     int32_t  imm;
     uint32_t raw;
 } DecodedInstr;
@@ -54,6 +59,20 @@ typedef struct {
 } InstructionHandler;
 
 #define ISA_REGISTRY_MAX 256
+
+/* Operand metadata, kept beside the registry (not inside InstructionHandler). */
+#define IF_RD_FP       0x01u   /* rd  names an f register */
+#define IF_RS1_FP      0x02u   /* rs1 names an f register */
+#define IF_RS2_FP      0x04u   /* rs2 names an f register */
+#define IF_RS3_FP      0x08u   /* rs3 names an f register */
+#define IF_HAS_RM      0x10u   /* funct3 is a rounding mode, not matched */
+#define IF_RS2_FIXED   0x20u   /* rs2 field is part of the encoding */
+
+int register_instruction_ex(InstructionHandler handler, uint32_t flags, int32_t rs2_sel);
+uint32_t isa_flags_of(const InstructionHandler *h);
+int32_t  isa_rs2_sel_of(const InstructionHandler *h);
+/* Like isa_find_by_opcode, but also checks rs2 for IF_RS2_FIXED entries. */
+const InstructionHandler *isa_find_by_encoding(uint32_t opcode, uint32_t funct3, uint32_t funct7, uint32_t rs2);
 
 void isa_registry_init(void);
 

@@ -9,6 +9,7 @@
 #include "assembler.h"
 #include "cli_display.h"
 #include "pipeline_state.h"
+#include "rv32f.h"
 
 #define DEFAULT_MEM_SIZE   (1u << 20)   /* 1 MB */
 #define DEFAULT_MAX_CYCLES 1000000ull
@@ -98,6 +99,7 @@ int main(int argc, char **argv) {
      *    register_rv32f(), register_custom_ext(), etc. right here. */
     isa_registry_init();
     register_rv32i_base();
+    register_rv32f();
 
     /* 2. Set up memory and assemble the program into it. */
     Memory mem;

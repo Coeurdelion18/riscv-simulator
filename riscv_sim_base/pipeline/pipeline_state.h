@@ -31,7 +31,7 @@ typedef struct {
     DecodedInstr instr;
     const InstructionHandler* handler;
     ControlSignals ctrl;
-    uint32_t rs1_val, rs2_val;
+    uint32_t rs1_val, rs2_val, rs3_val;
     uint64_t load_use_cycles;
     uint64_t stall_cycles;
     uint32_t pred_next;

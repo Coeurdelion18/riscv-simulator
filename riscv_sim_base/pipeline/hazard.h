@@ -8,6 +8,7 @@ typedef struct{
 typedef struct{
     uint32_t a,b; /*the operands that EX should use*/
     int fwd_ex, fwd_mem; /*how many operands came from each path. Can be 0,1 or 2 */
+    uint32_t c;   /* third operand (fused multiply-add) */
 }Operands;
 
 Operands forward_operands(const Pipeline *p, const IDEX *d); // This is the mux. Deciding where the value comes from.

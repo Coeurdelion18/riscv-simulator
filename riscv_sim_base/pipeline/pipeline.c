@@ -14,7 +14,9 @@ static uint32_t alu(const DecodedInstr *i, uint32_t pc, uint32_t a, uint32_t b) 
         case 0x37: return i->imm;                                     /* LUI */
         case 0x17: return pc + i->imm;                                /* AUIPC */
         case 0x03:                                                    /* Loads */
-        case 0x23: return a + i->imm;                                 /* Stores */
+        case 0x07:                                                    /* FLW */
+        case 0x23:                                                    /* Stores */
+        case 0x27: return a + i->imm;                                 /* FSW */
         case 0x13: /* OP-IMM */
             switch (i->funct3) {
                 case 0x0: return a + i->imm;                          /* ADDI */
@@ -49,6 +51,53 @@ static uint32_t alu(const DecodedInstr *i, uint32_t pc, uint32_t a, uint32_t b) 
             }
         default: return 0;
     }
+}
+
+/* Unified numbering: 0 = none, 1..31 = x, 32..63 = f */
+static uint32_t read_unified(const CPUState *cpu, int n) {
+    if (n == REG_NONE) return 0;
+    return n >= FREG_BASE ? cpu_read_freg(cpu, n - FREG_BASE) : cpu_read_reg(cpu, n);
+}
+
+static void write_unified(CPUState *cpu, int n, uint32_t v) {
+    if (n == REG_NONE) return;
+    if (n >= FREG_BASE) cpu_write_freg(cpu, n - FREG_BASE, v);
+    else                cpu_write_reg(cpu, n, v);
+}
+
+static void place_operand(CPUState *s, int unified, uint32_t idx, uint32_t v) {
+    if (unified == REG_NONE) return;
+    if (unified >= FREG_BASE) cpu_write_freg(s, (int)idx, v);
+    else                      cpu_write_reg(s, (int)idx, v);
+}
+
+/* Runs the instruction's registered handler on a scratch CPU holding the
+ * (forwarded) operands. Returns 1 if the handler faulted (illegal rounding
+ * mode), in which case nothing is committed. Otherwise stores the result and
+ * commits fcsr: EX is in program order and never squashed, so fcsr needs no
+ * forwarding or stalling. */
+static int exec_handler_in_ex(const IDEX *d, const Operands *o, CPUState *cpu,
+                              Memory *mem, uint32_t *result) {
+    CPUState s;
+    memset(&s, 0, sizeof s);
+    s.pc = d->pc;
+    s.next_pc = d->pc + 4;
+    s.status = CPU_RUNNING;
+    s.fcsr = cpu->fcsr;
+
+    place_operand(&s, d->ctrl.src1, d->instr.rs1, o->a);
+    place_operand(&s, d->ctrl.src2, d->instr.rs2, o->b);
+    place_operand(&s, d->ctrl.src3, d->instr.rs3, o->c);
+
+    DecodedInstr tmp = d->instr;
+    d->handler->execute(&s, mem, &tmp);
+
+    if (s.status != CPU_RUNNING) return 1;      /* handler raised ILLEGAL_INSTRUCTION */
+    cpu->fcsr = s.fcsr;
+    if (d->ctrl.dst == REG_NONE)           *result = 0;
+    else if (d->ctrl.dst >= FREG_BASE)     *result = cpu_read_freg(&s, (int)d->instr.rd);
+    else                                   *result = cpu_read_reg(&s, (int)d->instr.rd);
+    return 0;
 }
 
 void pipeline_init(Pipeline *p, int forwarding, const BranchPredictor *predictor) {
@@ -135,7 +184,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             goto commit;
         }
         if (p->mem_wb.ctrl.reg_write)
-            cpu_write_reg(cpu, p->mem_wb.instr.rd, p->mem_wb.wb_val);
+            write_unified(cpu, p->mem_wb.ctrl.dst, p->mem_wb.wb_val);
         if (p->mem_wb.ctrl.is_system) {
             uint32_t fetch_pc = cpu->pc;
             DecodedInstr instr = p->mem_wb.instr;
@@ -257,6 +306,12 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             else
                 redirect_pc = (o.a + (uint32_t)p->id_ex.instr.imm) & ~1u;
             flush = redirect_pc != p->id_ex.pred_next;
+        } else if (p->id_ex.ctrl.use_handler) {
+            uint32_t r = 0;
+            if (exec_handler_in_ex(&p->id_ex, &o, cpu, mem, &r))
+                nx.ex_mem.fault = PF_ILLEGAL;      /* travels to WB like any other fault */
+            else
+                nx.ex_mem.alu_result = r;
         } else {
             nx.ex_mem.alu_result = alu(&(p->id_ex.instr), p->id_ex.pc, o.a, o.b);
         }
@@ -287,6 +342,8 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                 d.rs2 = 17; /* a7: syscall number */
                 ctrl.uses_rs1 = 1;
                 ctrl.uses_rs2 = 1;
+                ctrl.src1 = 10;     /* new */
+                ctrl.src2 = 17;     /* new */
             }
             HazardVerdict hz = hazard_check(p, &d, &ctrl);
             if(hz.stall){
@@ -302,8 +359,11 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                 nx.id_ex.instr = d;
                 nx.id_ex.handler = h;
                 nx.id_ex.ctrl = ctrl;
-                nx.id_ex.rs1_val = cpu_read_reg(cpu, d.rs1);
-                nx.id_ex.rs2_val = cpu_read_reg(cpu, d.rs2);
+                // nx.id_ex.rs1_val = cpu_read_reg(cpu, d.rs1);
+                // nx.id_ex.rs2_val = cpu_read_reg(cpu, d.rs2);
+                nx.id_ex.rs1_val = read_unified(cpu, ctrl.src1);
+                nx.id_ex.rs2_val = read_unified(cpu, ctrl.src2);
+                nx.id_ex.rs3_val = read_unified(cpu, ctrl.src3);
             }
         }
     }

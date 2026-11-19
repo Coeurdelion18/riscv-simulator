@@ -1,0 +1,45 @@
+== tests/fp_data.s
+branches        = 0
+mispredicts     = 0
+accuracy        = 0.0%
+jal             = 0
+jalr            = 0
+redirects       = 0
+squashed        = 0
+load_use_stalls = 0
+== tests/micro.s
+branches        = 0
+mispredicts     = 0
+accuracy        = 0.0%
+jal             = 0
+jalr            = 0
+redirects       = 0
+squashed        = 0
+load_use_stalls = 0
+== tests/sample1_sum_loop.s
+branches        = 11
+mispredicts     = 1
+accuracy        = 90.9%
+jal             = 10
+jalr            = 0
+redirects       = 1
+squashed        = 2
+load_use_stalls = 0
+== tests/sample2_mem_and_branches.s
+branches        = 1
+mispredicts     = 1
+accuracy        = 0.0%
+jal             = 0
+jalr            = 0
+redirects       = 1
+squashed        = 2
+load_use_stalls = 0
+== tests/sample4_data_hazards.s
+branches        = 1
+mispredicts     = 1
+accuracy        = 0.0%
+jal             = 0
+jalr            = 0
+redirects       = 1
+squashed        = 2
+load_use_stalls = 0

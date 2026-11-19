@@ -1,5 +1,5 @@
 CC      := gcc
-CFLAGS  := -std=c11 -Wall -Wextra -g -O0 \
+CFLAGS  := -std=c11 -Wall -Wextra -g -O0 -frounding-math \
            -Icore -Iisa -Iassembler -Iui -Ipipeline
 LDFLAGS :=
 
@@ -16,6 +16,7 @@ SRCS := \
 	core/decoder.c \
 	core/executor.c \
 	isa/rv32i_base.c \
+	isa/rv32f.c \
 	assembler/assembler.c \
 	ui/cli_display.c \
 	pipeline/control.c \
