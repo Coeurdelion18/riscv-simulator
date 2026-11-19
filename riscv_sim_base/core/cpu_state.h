@@ -17,6 +17,8 @@ typedef enum {
 
 typedef struct {
     uint32_t regs[NUM_REGS];    /* x0..x31. x0 is always read as 0 (enforced in accessors) */
+    uint32_t fregs[32];
+    uint32_t fcsr;
     uint32_t pc;
     uint32_t next_pc;           /* instruction handlers write here; executor commits it to pc */
     CPUStatus status;
@@ -43,4 +45,15 @@ int cpu_reg_index_from_name(const char *name);
 
 const char *cpu_status_str(CPUStatus status);
 
-#endif /* CPU_STATE_H */
+#define FFLAG_NX 1u
+#define FFLAG_UF 2u
+#define FFLAG_OF 4u
+#define FFLAG_DZ 8u
+#define FFLAG_NV 16u
+uint32_t cpu_read_freg(const CPUState *cpu, int index);
+void cpu_write_freg(CPUState *cpu, int index, uint32_t value);
+void cpu_raise_fflags(CPUState *cpu, uint32_t flags);
+uint32_t cpu_frm(const CPUState *cpu);
+int cpu_freg_index_from_name(const char *name);
+const char *cpu_freg_abi_name(int index);
+#endif

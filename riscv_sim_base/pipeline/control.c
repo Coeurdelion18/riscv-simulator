@@ -1,10 +1,23 @@
 #include "control.h"
 
 ControlSignals control_decode(const DecodedInstr* i, const InstructionHandler* h) {
-    (void)i;
+
     ControlSignals sig = {0};
 
     switch (h->format) {
+        case FMT_CSR:
+            sig.reg_write = 1;
+            sig.wb_src = WB_ALU;
+            sig.uses_rs1 = i->funct3 < 5;
+            break;
+        case FMT_R2:
+            sig.reg_write = 1;
+            sig.wb_src = WB_ALU;
+            sig.uses_rs1 = 1;
+            break;
+        case FMT_R4:
+            sig.uses_rs3 = 1;
+            /* fall through */
         case FMT_R:
             sig.reg_write = 1;
             sig.wb_src = WB_ALU;
@@ -107,5 +120,10 @@ ControlSignals control_decode(const DecodedInstr* i, const InstructionHandler* h
             break;
     }
 
+    uint32_t flags = instruction_flags(h);
+    sig.src1 = sig.uses_rs1 ? i->rs1 + ((flags & IF_RS1_FP) ? 32 : 0) : 0;
+    sig.src2 = sig.uses_rs2 ? i->rs2 + ((flags & IF_RS2_FP) ? 32 : 0) : 0;
+    sig.src3 = sig.uses_rs3 ? i->rs3 + ((flags & IF_RS3_FP) ? 32 : 0) : 0;
+    sig.dst = sig.reg_write ? i->rd + ((flags & IF_RD_FP) ? 32 : 0) : 0;
     return sig;
 }

@@ -31,7 +31,7 @@ typedef struct {
     DecodedInstr instr;
     const InstructionHandler* handler;
     ControlSignals ctrl;
-    uint32_t rs1_val, rs2_val;
+    uint32_t rs1_val, rs2_val, rs3_val;
     uint64_t load_use_cycles;
     uint64_t stall_cycles;
     uint32_t pred_next;
@@ -48,6 +48,7 @@ typedef struct {
     uint32_t alu_result;
     uint32_t store_val;
     uint32_t fault_addr;
+    uint32_t fcsr_after;
     uint64_t load_use_cycles;
     uint64_t stall_cycles;
     int redirected, mispredicted;
@@ -63,6 +64,7 @@ typedef struct {
     ControlSignals ctrl;
     uint32_t wb_val;
     uint32_t fault_addr;
+    uint32_t fcsr_after;
     uint64_t load_use_cycles;
     uint64_t stall_cycles;
     int redirected, mispredicted;
@@ -80,6 +82,7 @@ typedef struct {
     BPState bp_state;
     int forwarding;
     int trace;
+    uint32_t fcsr_committed;
 } Pipeline;
 
 void pipeline_init(Pipeline* p, int forwarding, const BranchPredictor *predictor);

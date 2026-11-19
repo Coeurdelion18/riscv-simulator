@@ -7,50 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static uint32_t alu(const DecodedInstr *i, uint32_t pc, uint32_t a, uint32_t b) {
-    uint32_t shamt = (uint32_t)i->imm & 0x1F;
-
-    switch (i->opcode) {
-        case 0x37: return i->imm;                                     /* LUI */
-        case 0x17: return pc + i->imm;                                /* AUIPC */
-        case 0x03:                                                    /* Loads */
-        case 0x23: return a + i->imm;                                 /* Stores */
-        case 0x13: /* OP-IMM */
-            switch (i->funct3) {
-                case 0x0: return a + i->imm;                          /* ADDI */
-                case 0x2: return ((int32_t)a < (int32_t)i->imm) ? 1 : 0; /* SLTI */
-                case 0x3: return ((uint32_t)a < (uint32_t)i->imm) ? 1 : 0;                /* SLTIU */
-                case 0x4: return a ^ i->imm;                          /* XORI */
-                case 0x6: return a | i->imm;                          /* ORI */
-                case 0x7: return a & i->imm;                          /* ANDI */
-                case 0x1: return a << shamt;                         /* SLLI */
-                case 0x5:                                            /* SRLI / SRAI */
-                    if (i->funct7 & 0x20)
-                        return (uint32_t)(((int32_t)a) >> shamt);    /* SRAI */
-                    return a >> shamt;                               /* SRLI */
-                default: return 0;
-            }
-        case 0x33: /* OP (R-type) */
-            switch (i->funct3) {
-                case 0x0:                                            /* ADD / SUB */
-                    if (i->funct7 & 0x20) return a - b;               /* SUB */
-                    return a + b;                                    /* ADD */
-                case 0x1: return a << (b & 0x1F);                   /* SLL */
-                case 0x2: return ((int32_t)a < (int32_t)b) ? 1 : 0;  /* SLT */
-                case 0x3: return (a < b) ? 1 : 0;                   /* SLTU */
-                case 0x4: return a ^ b;                              /* XOR */
-                case 0x5:                                            /* SRL / SRA */
-                    if (i->funct7 & 0x20)
-                        return (uint32_t)(((int32_t)a) >> (b & 0x1F));/* SRA */
-                    return a >> (b & 0x1F);                          /* SRL */
-                case 0x6: return a | b;                              /* OR */
-                case 0x7: return a & b;                              /* AND */
-                default: return 0;
-            }
-        default: return 0;
-    }
-}
-
 void pipeline_init(Pipeline *p, int forwarding, const BranchPredictor *predictor) {
     memset(p, 0, sizeof(*p));
     p->forwarding = forwarding;
@@ -85,7 +41,7 @@ void pipeline_run_batch(Pipeline *p, CPUState *cpu, Memory *mem, uint64_t max_cy
     print_status(cpu);
     double cpi = p->retired ? (double)p->cycles / p->retired : 0.0;
     double accuracy = p->branches ?
-        100.0 * (p->branches - p->mispredicts) / p->branches : 0.0;
+        100.0 * (p->branches - p->mispredicts) / p->branches : 100.0;
     printf("pipeline        = 5-stage, hazard unit '%s', predictor '%s'\n"
            "retired         = %" PRIu64 "\n"
            "CPI             = %.3f\n"
@@ -114,6 +70,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
     if (p->trace)
         trace_cycle(p, cpu->pc);
 
+    if (p->cycles == 0) p->fcsr_committed = cpu->fcsr;
     Pipeline nx = *p;
     nx.cycles++;
     // Clear complete outgoing latches so bubbles cannot retain live controls
@@ -135,7 +92,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             goto commit;
         }
         if (p->mem_wb.ctrl.reg_write)
-            cpu_write_reg(cpu, p->mem_wb.instr.rd, p->mem_wb.wb_val);
+            register_write(cpu, p->mem_wb.ctrl.dst, p->mem_wb.wb_val);
         if (p->mem_wb.ctrl.is_system) {
             uint32_t fetch_pc = cpu->pc;
             DecodedInstr instr = p->mem_wb.instr;
@@ -143,6 +100,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             p->mem_wb.handler->execute(cpu, mem, &instr);
             cpu->pc = fetch_pc;
         }
+        nx.fcsr_committed = p->mem_wb.fcsr_after;
         nx.retired++;
         nx.stalls += p->mem_wb.stall_cycles;
         nx.load_use_stalls += p->mem_wb.load_use_cycles;
@@ -163,6 +121,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
 
     if (p->ex_mem.valid) {
         nx.mem_wb.valid = 1;
+        nx.mem_wb.fcsr_after = p->ex_mem.fcsr_after;
         nx.mem_wb.pc = p->ex_mem.pc;
         nx.mem_wb.fault = p->ex_mem.fault;
         nx.mem_wb.instr = p->ex_mem.instr;
@@ -220,6 +179,7 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
         nx.ex_mem.stall_cycles = p->id_ex.stall_cycles;
         nx.ex_mem.load_use_cycles = p->id_ex.load_use_cycles;
         nx.ex_mem.valid = 1;
+        nx.ex_mem.fcsr_after = cpu->fcsr;
         nx.ex_mem.pc = p->id_ex.pc;
         nx.ex_mem.fault = p->id_ex.fault;
         nx.ex_mem.fault_addr = p->id_ex.pc;
@@ -257,8 +217,26 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             else
                 redirect_pc = (o.a + (uint32_t)p->id_ex.instr.imm) & ~1u;
             flush = redirect_pc != p->id_ex.pred_next;
-        } else {
-            nx.ex_mem.alu_result = alu(&(p->id_ex.instr), p->id_ex.pc, o.a, o.b);
+        } else if (p->id_ex.ctrl.mem_read || p->id_ex.ctrl.mem_write) {
+            nx.ex_mem.alu_result = o.a + (uint32_t)p->id_ex.instr.imm;
+        } else if (!p->id_ex.ctrl.is_system) {
+            /* Handlers see only their latched/forwarded register operands.
+             * Memory instructions and syscalls are handled in MEM and WB. */
+            CPUState scratch = *cpu;
+            DecodedInstr instr = p->id_ex.instr;
+            register_write(&scratch, p->id_ex.ctrl.src1, o.a);
+            register_write(&scratch, p->id_ex.ctrl.src2, o.b);
+            register_write(&scratch, p->id_ex.ctrl.src3, o.c);
+            scratch.pc = p->id_ex.pc;
+            p->id_ex.handler->execute(&scratch, mem, &instr);
+            if (scratch.status != CPU_RUNNING) {
+                nx.ex_mem.fault = scratch.status == CPU_ILLEGAL_INSTRUCTION ? PF_ILLEGAL : PF_MEM;
+                nx.ex_mem.fault_addr = scratch.fault_addr;
+            } else {
+                nx.ex_mem.alu_result = register_read(&scratch, p->id_ex.ctrl.dst);
+                cpu->fcsr = scratch.fcsr;
+                nx.ex_mem.fcsr_after = scratch.fcsr;
+            }
         }
     }
     nx.ex_mem.redirected = flush;
@@ -279,14 +257,16 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
             nx.id_ex.fault = PF_ILLEGAL;
         } else {
             ControlSignals ctrl = control_decode(&d, h);
-            /* In forwarding mode, include the syscall ABI's implicit inputs
+            /* Include the syscall ABI's implicit inputs
              * in dependency checks and forwarding statistics. The syscall
              * handler still runs at WB with the committed register file. */
-            if (p->forwarding && ctrl.is_system) {
+            if (ctrl.is_system) {
                 d.rs1 = 10; /* a0: argument */
                 d.rs2 = 17; /* a7: syscall number */
                 ctrl.uses_rs1 = 1;
                 ctrl.uses_rs2 = 1;
+                ctrl.src1 = 10;
+                ctrl.src2 = 17;
             }
             HazardVerdict hz = hazard_check(p, &d, &ctrl);
             if(hz.stall){
@@ -302,8 +282,9 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
                 nx.id_ex.instr = d;
                 nx.id_ex.handler = h;
                 nx.id_ex.ctrl = ctrl;
-                nx.id_ex.rs1_val = cpu_read_reg(cpu, d.rs1);
-                nx.id_ex.rs2_val = cpu_read_reg(cpu, d.rs2);
+                nx.id_ex.rs1_val = register_read(cpu, ctrl.src1);
+                nx.id_ex.rs2_val = register_read(cpu, ctrl.src2);
+                nx.id_ex.rs3_val = register_read(cpu, ctrl.src3);
             }
         }
     }
@@ -341,6 +322,8 @@ CPUStatus pipeline_cycle(Pipeline *p, CPUState *cpu, Memory *mem) {
     }
 
 commit:
+    if (cpu->status != CPU_RUNNING)
+        cpu->fcsr = nx.fcsr_committed;
     *p = nx;
     cpu->cycle_count = p->cycles;
     return cpu->status;

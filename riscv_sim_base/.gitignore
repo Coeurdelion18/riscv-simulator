@@ -1,0 +1,10 @@
+*.o
+rvsim
+rvsim.exe
+ref.txt
+fw.txt
+st.txt
+a.txt
+b.txt
+c.txt
+baseline*.txt

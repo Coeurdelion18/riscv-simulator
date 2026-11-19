@@ -1,3 +1,5 @@
+#ifndef HAZARD_H
+#define HAZARD_H
 #include "pipeline_state.h"
 
 typedef struct{
@@ -6,7 +8,7 @@ typedef struct{
 }HazardVerdict;
 
 typedef struct{
-    uint32_t a,b; /*the operands that EX should use*/
+    uint32_t a,b,c; /*the operands that EX should use*/
     int fwd_ex, fwd_mem; /*how many operands came from each path. Can be 0,1 or 2 */
 }Operands;
 
@@ -16,3 +18,5 @@ HazardVerdict hazard_check(const Pipeline *p, const DecodedInstr *d, const Contr
 
 /* valid latch + really writes a register + not x0 + same register number */
 int produces(int valid, const ControlSignals *lc, uint32_t rd, uint32_t rs);
+
+#endif

@@ -3,6 +3,8 @@
 #include <stdio.h>
 
 static InstructionHandler g_registry[ISA_REGISTRY_MAX];
+static uint32_t g_flags[ISA_REGISTRY_MAX];
+static int g_rs2[ISA_REGISTRY_MAX];
 static int g_count = 0;
 
 /* NOTE ON PERFORMANCE: lookups below are linear scans. With the base ISA
@@ -18,7 +20,13 @@ void isa_registry_init(void) {
 }
 
 int register_instruction(InstructionHandler handler) {
+    return register_instruction_ex(handler, 0, -1);
+}
+
+int register_instruction_ex(InstructionHandler handler, uint32_t flags, int rs2_sel) {
     if (g_count >= ISA_REGISTRY_MAX) return -1;
+    g_flags[g_count] = flags;
+    g_rs2[g_count] = rs2_sel;
     g_registry[g_count++] = handler;
     return 0;
 }
@@ -49,4 +57,24 @@ int isa_registry_count(void) { return g_count; }
 const InstructionHandler *isa_registry_get(int index) {
     if (index < 0 || index >= g_count) return NULL;
     return &g_registry[index];
+}
+
+uint32_t instruction_flags(const InstructionHandler *handler) {
+    return g_flags[handler - g_registry];
+}
+int instruction_rs2(const InstructionHandler *handler) {
+    return g_rs2[handler - g_registry];
+}
+const InstructionHandler *isa_find_by_word(uint32_t raw) {
+    for (int n = 0; n < g_count; ++n) {
+        const InstructionHandler *h = &g_registry[n];
+        if (h->opcode != (raw & 127)) continue;
+        if (h->funct3 >= 0 && (uint32_t)h->funct3 != ((raw >> 12) & 7)) continue;
+        if (h->funct7 >= 0 && (uint32_t)h->funct7 != (raw >> 25)) continue;
+        if ((g_flags[n] & IF_RS2_FIXED) && (uint32_t)g_rs2[n] != ((raw >> 20) & 31)) continue;
+        if (h->format == FMT_R4 && ((raw >> 25) & 3) != 0) continue;
+        if (h->format == FMT_I_SYS && raw != 0x73) continue;
+        return h;
+    }
+    return NULL;
 }

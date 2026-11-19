@@ -6,6 +6,8 @@
 #include "memory.h"
 #include "isa_registry.h"
 #include "rv32i_base.h"
+#include "rv32f.h"
+#include "rv32m.h"
 #include "assembler.h"
 #include "cli_display.h"
 #include "pipeline_state.h"
@@ -98,6 +100,8 @@ int main(int argc, char **argv) {
      *    register_rv32f(), register_custom_ext(), etc. right here. */
     isa_registry_init();
     register_rv32i_base();
+    register_rv32m();
+    register_rv32f();
 
     /* 2. Set up memory and assemble the program into it. */
     Memory mem;

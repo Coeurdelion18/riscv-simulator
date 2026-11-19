@@ -30,6 +30,7 @@ typedef enum {
     FMT_S,        /* rs2, imm(rs1)                   e.g. sw   a0, 0(sp)       */
     FMT_B,        /* rs1, rs2, label                 e.g. beq  a0, a1, foo     */
     FMT_U,        /* rd, imm                         e.g. lui  a0, 0x10000     */
+    FMT_R2, FMT_R4, FMT_CSR,
     FMT_J         /* rd, label                       e.g. jal  ra, foo        */
 } InstrFormat;
 
@@ -37,7 +38,7 @@ typedef struct {
     uint32_t opcode;
     uint32_t funct3;
     uint32_t funct7;
-    uint32_t rd, rs1, rs2;
+    uint32_t rd, rs1, rs2, rs3;
     int32_t  imm;
     uint32_t raw;
 } DecodedInstr;
@@ -53,6 +54,14 @@ typedef struct {
     ExecuteFn   execute;
 } InstructionHandler;
 
+enum {
+    IF_RD_FP = 1, IF_RS1_FP = 2, IF_RS2_FP = 4, IF_RS3_FP = 8,
+    IF_HAS_RM = 16, IF_RS2_FIXED = 32
+};
+int register_instruction_ex(InstructionHandler handler, uint32_t flags, int rs2_sel);
+uint32_t instruction_flags(const InstructionHandler *handler);
+int instruction_rs2(const InstructionHandler *handler);
+const InstructionHandler *isa_find_by_word(uint32_t raw);
 #define ISA_REGISTRY_MAX 256
 
 void isa_registry_init(void);
