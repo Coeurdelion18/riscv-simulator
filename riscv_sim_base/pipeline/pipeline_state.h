@@ -7,6 +7,9 @@
 #include "cpu_state.h"
 #include "memory.h"
 #include "branch_predictor.h"
+#include "sim_engine.h"
+
+typedef enum { HAZARD_NONE, HAZARD_STALL, HAZARD_FORWARD } HazardMode;
 
 #define PF_NONE 0
 #define PF_ILLEGAL 1
@@ -63,6 +66,7 @@ typedef struct {
     const InstructionHandler* handler;
     ControlSignals ctrl;
     uint32_t wb_val;
+    uint32_t system_number;
     uint32_t fault_addr;
     uint32_t fcsr_after;
     uint64_t load_use_cycles;
@@ -80,13 +84,15 @@ typedef struct {
     uint64_t branches, mispredicts, jal, jalr;
     const BranchPredictor *predictor;
     BPState bp_state;
-    int forwarding;
+    HazardMode hazard_mode;
     int trace;
     uint32_t fcsr_committed;
 } Pipeline;
 
-void pipeline_init(Pipeline* p, int forwarding, const BranchPredictor *predictor);
+void pipeline_init(Pipeline* p, HazardMode hazard_mode, const BranchPredictor *predictor);
 CPUStatus pipeline_cycle(Pipeline* p, CPUState* cpu, Memory* mem);
 void pipeline_run_batch(Pipeline* p, CPUState* cpu, Memory* mem, uint64_t max_cycles);
+
+void pipeline_engine_init(SimEngine *engine, Pipeline *p, CPUState *cpu, Memory *mem);
 
 #endif

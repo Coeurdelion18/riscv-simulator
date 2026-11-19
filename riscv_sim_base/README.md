@@ -1,3 +1,50 @@
+# Current simulator and submission interface
+
+This simulator implements RV32I, RV32M and RV32F, a single-cycle engine,
+a five-stage pipeline, three hazard policies and four branch predictors.
+Build with `make`; `make test` runs the two programs in `tests/`.
+On Linux the executable is `rvsim`; on Windows it is `rvsim.exe`.
+
+Examples (use `rvsim.exe` on Windows):
+
+```sh
+./rvsim program.s --batch
+./rvsim program.s --batch --single-cycle
+./rvsim program.s --batch --hazard forward --predictor 2bit
+./rvsim program.s --batch --hazard stall --predictor btfn
+./rvsim program.s --batch --hazard none --predictor not-taken
+./rvsim program.s --batch --trace --max-cycles 10000
+./rvsim program.s
+```
+
+`--batch` defaults to the forwarding pipeline and two-bit predictor.
+`--hazard none` intentionally disables both dependency stalls and forwarding;
+dependent programs can compute incorrect results or fault.
+Predictors are `not-taken`, `btfn`, `1bit` and `2bit`.
+`--pipeline` remains an alias for `--batch --hazard stall` and
+`--pipeline-forward` for `--batch --hazard forward`.
+Without `--batch`, the single-cycle interactive debugger runs.
+Predictor/hazard/trace options require pipeline batch mode.
+`--max-cycles N` is an absolute cycle ceiling; zero executes zero cycles.
+The default ceiling is 1000000. `--mem-size N` sets simulated bytes
+(default 1048576). Numeric options accept decimal and hexadecimal integers.
+Trace entries go to stdout, matching the evaluator reference UI.
+
+`core/sim_engine.h` defines the shared UI/engine contract. The single-cycle
+adapter is in `core/sim_engine.c`; pipeline callbacks and statistics are in
+`pipeline/pipeline.c`. The UI can be replaced by the evaluator's `ref_ui/`
+without changing the engines. Our own UI additionally displays all FP
+registers and fcsr; the Lab 4 reference UI displays integer registers only.
+
+The Lab 2/3 sample goldens predate prediction. Exact old cycle counts require
+a historical verification build with IF prediction disabled; these timings
+are not the expected output of the current default two-bit predictor.
+
+## Original skeleton documentation (historical)
+
+The material below describes the original starter, before the later labs.
+For the current execution modes and submission interface, use the section above.
+
 # RV32I Base Simulator
 
 A single-cycle RV32I RISC-V simulator, assembler, and CLI debugger written in

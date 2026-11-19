@@ -1,0 +1,3 @@
+running: rvsim sample.s --batch --hazard forward --predictor 2bit
+register state match= 100% ,counter match = 100%
+RAW reg=32/32 cnt=9/9

@@ -14,7 +14,8 @@ static int depends(const ControlSignals *consumer, int valid, int fault, const C
 HazardVerdict hazard_check(const Pipeline *p, const DecodedInstr *d, const ControlSignals *ctrl) {
     (void)d;
     HazardVerdict verdict = {0, 0};
-    if (!p->forwarding) {
+    if (p->hazard_mode == HAZARD_NONE) return verdict;
+    if (p->hazard_mode == HAZARD_STALL) {
         /* WB runs before ID reads the register files in the same cycle. */
         verdict.stall = depends(ctrl, p->id_ex.valid, p->id_ex.fault, &p->id_ex.ctrl) ||
                         depends(ctrl, p->ex_mem.valid, p->ex_mem.fault, &p->ex_mem.ctrl);
@@ -46,7 +47,7 @@ static uint32_t forwarded(const Pipeline *p, uint32_t source, uint32_t value, Op
 
 Operands forward_operands(const Pipeline *p, const IDEX *d) {
     Operands out = {d->rs1_val, d->rs2_val, d->rs3_val, 0, 0};
-    if (p->forwarding && d->valid && d->fault == PF_NONE) {
+    if (p->hazard_mode == HAZARD_FORWARD && d->valid && d->fault == PF_NONE) {
         out.a = forwarded(p, d->ctrl.src1, out.a, &out);
         out.b = forwarded(p, d->ctrl.src2, out.b, &out);
         out.c = forwarded(p, d->ctrl.src3, out.c, &out);

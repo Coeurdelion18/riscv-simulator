@@ -1,5 +1,4 @@
 #include "cli_display.h"
-#include "executor.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -54,11 +53,32 @@ void print_memory_range(const Memory *mem, uint32_t base_addr, uint32_t length) 
     }
 }
 
+void print_stage_line(const SimEngine *e) {
+    PipelineStageView v[SIM_MAX_STAGES];
+    int n = e->stage_views(e, v, SIM_MAX_STAGES);
+    printf("[cycle %5llu] ", (unsigned long long)e->cpu->cycle_count + 1);
+    for (int i = 0; i < n; i++) {
+        if (v[i].is_bubble) printf("%s ----------", v[i].label);
+        else                printf("%s 0x%08x", v[i].label, v[i].pc);
+        if (i + 1 < n) printf(" | ");
+    }
+    printf("\n");
+}
+
+void print_engine_stats(const SimEngine *e) {
+    if (!e->format_stats) return;
+    char buf[1024];
+    e->format_stats(e, buf, sizeof(buf));
+    printf("%s", buf);
+}
+
 static void print_help(void) {
     printf("commands:\n"
-           "  step [n]          execute n cycles (default 1)\n"
+           "  step [n]          execute n clock cycles (default 1)\n"
            "  run               execute until halt/fault/breakpoint\n"
            "  regs              show register file\n"
+           "  pipe              show what each pipeline stage holds next cycle\n"
+           "  stats             show engine statistics (CPI, ...)\n"
            "  mem <addr> <len>  show memory (hex/decimal address, length in bytes)\n"
            "  break <addr>      set a breakpoint at address\n"
            "  clearbreak <addr> remove a breakpoint\n"
@@ -69,12 +89,14 @@ static void print_help(void) {
 
 #define MAX_BREAKPOINTS 64
 
-void run_repl(CPUState *cpu, Memory *mem) {
+void run_repl(SimEngine *e) {
+    CPUState *cpu = e->cpu;
+    Memory *mem = e->mem;
     uint32_t breakpoints[MAX_BREAKPOINTS];
     int nbreak = 0;
     char line[256];
 
-    printf("RISC-V single-cycle simulator -- interactive mode ('help' for commands)\n");
+    printf("RISC-V simulator (%s) -- interactive mode ('help' for commands)\n", e->name);
     print_status(cpu);
 
     while (1) {
@@ -94,6 +116,10 @@ void run_repl(CPUState *cpu, Memory *mem) {
             print_registers(cpu);
         } else if (strcmp(cmd, "status") == 0) {
             print_status(cpu);
+        } else if (strcmp(cmd, "pipe") == 0) {
+            print_stage_line(e);
+        } else if (strcmp(cmd, "stats") == 0) {
+            print_engine_stats(e);
         } else if (strcmp(cmd, "mem") == 0) {
             if (nargs < 3) { printf("usage: mem <addr> <len>\n"); continue; }
             uint32_t addr = (uint32_t)strtoul(arg1, NULL, 0);
@@ -120,12 +146,13 @@ void run_repl(CPUState *cpu, Memory *mem) {
             long n = (nargs >= 2) ? strtol(arg1, NULL, 0) : 1;
             for (long i = 0; i < n; i++) {
                 if (cpu->status != CPU_RUNNING) { printf("machine is not running (%s)\n", cpu_status_str(cpu->status)); break; }
-                execute_cycle(cpu, mem);
+                e->step(e);
             }
             print_status(cpu);
+            print_stage_line(e);
         } else if (strcmp(cmd, "run") == 0) {
             while (cpu->status == CPU_RUNNING) {
-                execute_cycle(cpu, mem);
+                e->step(e);
                 for (int i = 0; i < nbreak; i++) {
                     if (cpu->pc == breakpoints[i] && cpu->status == CPU_RUNNING) {
                         printf("hit breakpoint at 0x%08x\n", cpu->pc);
@@ -141,9 +168,11 @@ void run_repl(CPUState *cpu, Memory *mem) {
     }
 }
 
-void run_batch(CPUState *cpu, Memory *mem, uint64_t max_cycles) {
+void run_batch(SimEngine *e, uint64_t max_cycles, int trace) {
+    CPUState *cpu = e->cpu;
     while (cpu->status == CPU_RUNNING && cpu->cycle_count < max_cycles) {
-        execute_cycle(cpu, mem);
+        if (trace) print_stage_line(e);
+        e->step(e);
     }
     printf("\n");
     print_registers(cpu);
@@ -151,4 +180,5 @@ void run_batch(CPUState *cpu, Memory *mem, uint64_t max_cycles) {
     if (cpu->status == CPU_RUNNING) {
         printf("  -> stopped: reached max cycle limit (%llu)\n", (unsigned long long)max_cycles);
     }
+    print_engine_stats(e);
 }

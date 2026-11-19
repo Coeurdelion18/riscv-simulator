@@ -15,6 +15,7 @@ SRCS := \
 	core/isa_registry.c \
 	core/decoder.c \
 	core/executor.c \
+	core/sim_engine.c \
 	isa/rv32i_base.c \
 	isa/rv32m.c \
 	isa/rv32f.c \
@@ -39,7 +40,7 @@ all: $(BIN)
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
-$(OBJS): core/cpu_state.h core/isa_registry.h pipeline/control.h
+$(OBJS): core/cpu_state.h core/isa_registry.h pipeline/control.h core/sim_engine.h
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

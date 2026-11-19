@@ -1,0 +1,9 @@
+C:\Users\siddh\OneDrive\Documents\GitClones\riscv_simulator\riscv-simulator\riscv_sim_base
+running: rvsim sample.s --batch --hazard forward --predictor 2bit
+register state match= 100% ,counter match = 100%
+RAW reg=32/32 cnt=9/9
+
+C:\Users\siddh\OneDrive\Documents\GitClones\riscv_simulator\riscv-simulator\student_package\riscv_sim_evaluator_compatible.zip
+running: rvsim sample.s --batch --hazard forward --predictor 2bit
+register state match= 100% ,counter match = 100%
+RAW reg=32/32 cnt=9/9
