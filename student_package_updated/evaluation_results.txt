@@ -1,0 +1,4 @@
+running: rvsim sample.s --batch --hazard forward --predictor 2bit
+graded registers: x1..x31, pc, f0..f31, fcsr (65 values)
+register state match= 100% ,counter match = 100%
+RAW reg=65/65 cnt=9/9

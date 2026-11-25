@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Self-check evaluator for the Lab 4 RV32I pipeline simulator.
+Self-check evaluator for the Lab 5 RV32IMF pipeline simulator.
 
 usage:
     python3 evaluate.py <source_folder_or_zip> <test.s> <expected.txt> [--verbose]
@@ -11,10 +11,16 @@ What it does:
      script, and runs `make`. Your own folder is never modified.
      If the build fails: prints "Cannot build from source" and exits.
   2. Runs  ./rvsim <test.s> --batch <options from the test's "# RUN:" line>
-  3. Compares the final register state (x1..x31 + pc) and the pipeline
-     counters against <expected.txt> and prints
+  3. Compares the final register state and the pipeline counters against
+     <expected.txt> and prints
 
         register state match= X% ,counter match = Y%
+
+     Which registers are compared is set by the test's "# GRADE:" line:
+        # GRADE: int       x1..x31 + pc                      (32 values, default)
+        # GRADE: int+fp    x1..x31 + pc + f0..f31 + fcsr     (65 values)
+     X% is the percentage of those values that match (partial credit:
+     every register counts equally).
 
 Python 3.8+, standard library only.
 """
@@ -45,6 +51,8 @@ SKIP_EXT = (".o", ".d", ".a", ".so")
 SKIP_NAMES = {"rvsim", "rvsim.exe", ".git", "__MACOSX"}
 
 REG_RE = re.compile(r"\bx(\d+)\s*/\s*\w+\s*=\s*(0x[0-9a-fA-F]+)")
+FREG_RE = re.compile(r"\bf(\d+)\s*/\s*\w+\s*=\s*(0x[0-9a-fA-F]+)")
+FCSR_RE = re.compile(r"^\s*fcsr\s*=\s*(0x[0-9a-fA-F]+)", re.M)
 PC_RE = re.compile(r"^\s*pc\s*=\s*(0x[0-9a-fA-F]+)", re.M)
 STATUS_RE = re.compile(r"^\s*status\s*=\s*(\S+)(?:\s+cycles\s*=\s*(\d+))?", re.M)
 COUNTER_RE = re.compile(r"^\s*([a-z_]+)\s*=\s*(\S+)\s*$", re.M)
@@ -53,15 +61,24 @@ COUNTER_RE = re.compile(r"^\s*([a-z_]+)\s*=\s*(\S+)\s*$", re.M)
 # ---------------------------------------------------------------- parsing
 
 def parse_dump(text):
-    """Extract registers, pc, status and counters from --batch output."""
+    """Extract registers, pc, status and counters from --batch output.
+    Integer registers are keyed 1..31, FP registers "f0".."f31", plus
+    "pc" and "fcsr"."""
     regs = {}
     for num, val in REG_RE.findall(text):
         n = int(num)
         if 1 <= n <= 31 and n not in regs:
             regs[n] = int(val, 16)
+    for num, val in FREG_RE.findall(text):
+        n = int(num)
+        if 0 <= n <= 31 and ("f%d" % n) not in regs:
+            regs["f%d" % n] = int(val, 16)
     m = PC_RE.search(text)
     if m:
         regs["pc"] = int(m.group(1), 16)
+    m = FCSR_RE.search(text)
+    if m:
+        regs["fcsr"] = int(m.group(1), 16)
 
     status, counters = None, {}
     m = STATUS_RE.search(text)
@@ -94,6 +111,30 @@ def run_options(asm_path):
                 toks = [t for t in toks if t not in ("--batch", "--trace")]
                 return toks
     return []
+
+
+INT_KEYS = list(range(1, 32)) + ["pc"]
+FP_KEYS = ["f%d" % i for i in range(32)] + ["fcsr"]
+
+
+def grade_keys(asm_path):
+    """Registers graded for this test, from its '# GRADE:' header line
+    ('int' when there is none)."""
+    with open(asm_path, errors="replace") as f:
+        for line in f:
+            m = re.match(r"\s*#\s*GRADE:\s*(\S+)", line)
+            if m:
+                g = m.group(1).lower()
+                if g == "int":
+                    return INT_KEYS, g
+                if g == "int+fp":
+                    return INT_KEYS + FP_KEYS, g
+                raise ValueError("unknown '# GRADE: %s' (use int or int+fp)" % m.group(1))
+    return INT_KEYS, "int"
+
+
+def reg_name(k):
+    return "x%d" % k if isinstance(k, int) else k
 
 
 # ---------------------------------------------------------------- building
@@ -187,7 +228,7 @@ def print_result(reg_ok, reg_n, cnt_ok, cnt_n):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Lab 4 simulator self-check evaluator")
+    ap = argparse.ArgumentParser(description="Lab 5 simulator self-check evaluator")
     ap.add_argument("source", help="your source folder (or a .zip of it)")
     ap.add_argument("program", help="test program (.s)")
     ap.add_argument("expected", help="expected --batch output (.txt)")
@@ -209,11 +250,19 @@ def main():
         print("error: reference ui/ folder missing next to evaluate.py (%s)" % REF_UI)
         return 2
 
+    try:
+        reg_keys, grade = grade_keys(a.program)
+    except ValueError as e:
+        print("error: %s: %s" % (a.program, e))
+        return 2
     with open(a.expected, errors="replace") as f:
         exp_regs, exp_status, exp_cnt = parse_dump(f.read())
-    if len(exp_regs) != 32:
-        print("error: '%s' does not look like an rvsim --batch dump" % a.expected)
+    missing = [reg_name(k) for k in reg_keys if k not in exp_regs]
+    if missing:
+        print("error: '%s' does not look like a Lab 5 rvsim --batch dump "
+              "(no value for %s)" % (a.expected, ", ".join(missing[:4])))
         return 2
+    nreg = len(reg_keys)
 
     work = tempfile.mkdtemp(prefix="rvsim_eval_")
     try:
@@ -229,28 +278,29 @@ def main():
         cmd = [exe, prog, "--batch"] + opts
         if a.verbose:
             print("running: rvsim %s --batch %s" % (os.path.basename(a.program), " ".join(opts)))
+            print("graded registers: %s (%d values)" % (
+                "x1..x31, pc" if grade == "int" else "x1..x31, pc, f0..f31, fcsr", nreg))
         try:
             p = subprocess.run(cmd, cwd=work, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                timeout=RUN_TIMEOUT_S)
         except subprocess.TimeoutExpired:
-            print_result(0, 32, 0, len(exp_cnt))
+            print_result(0, nreg, 0, len(exp_cnt))
             print("  reason: simulator did not finish within %d s" % RUN_TIMEOUT_S)
             return 1
         out = p.stdout.decode(errors="replace")
         if p.returncode < 0:
-            print_result(0, 32, 0, len(exp_cnt))
+            print_result(0, nreg, 0, len(exp_cnt))
             print("  reason: simulator crashed (signal %d)" % -p.returncode)
             return 1
         if p.returncode != 0:
-            print_result(0, 32, 0, len(exp_cnt))
+            print_result(0, nreg, 0, len(exp_cnt))
             print("  reason: simulator exited with code %d:" % p.returncode)
             print("  " + tail(out + p.stderr.decode(errors="replace"), 5).replace("\n", "\n  "))
             return 1
 
         got_regs, got_status, got_cnt = parse_dump(out)
 
-        reg_keys = list(range(1, 32)) + ["pc"]
         reg_bad = [k for k in reg_keys if got_regs.get(k) != exp_regs[k]]
         cnt_keys = [c for c in COUNTERS if c in exp_cnt]
         cnt_bad = [c for c in cnt_keys if got_cnt.get(c) != exp_cnt[c]]
@@ -264,8 +314,7 @@ def main():
             def h(v):
                 return "missing" if v is None else "0x%08x" % v
             for k in reg_bad:
-                name = "pc" if k == "pc" else "x%d" % k
-                print("  register %-4s expected %s  got %s" % (name, h(exp_regs[k]), h(got_regs.get(k))))
+                print("  register %-4s expected %s  got %s" % (reg_name(k), h(exp_regs[k]), h(got_regs.get(k))))
             for c in cnt_bad:
                 g = got_cnt.get(c)
                 print("  counter  %-12s expected %d  got %s" % (c, exp_cnt[c], "missing" if g is None else g))
